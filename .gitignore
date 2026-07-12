@@ -1,0 +1,27 @@
+# === OS cruft ===
+.DS_Store
+Thumbs.db
+
+# === Editors ===
+# Keep shared VS Code workspace files (settings, tasks, extension recommendations)
+# but ignore everything else in .vscode/ (local state, launch configs, etc.)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+.idea/
+
+# === Local agent config ===
+.claude/
+
+# === Dependencies (in case tooling ever gets added) ===
+node_modules/
+
+# === Logs ===
+*.log
+logs/
+
+# === Vault backups — NEVER commit encrypted financial data ===
+vault_backup.json
+fund_vault_backup.json
+*.enc
