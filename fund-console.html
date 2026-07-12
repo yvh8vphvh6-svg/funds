@@ -239,6 +239,18 @@
     display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);
     font-size:var(--fs-s);color:var(--dim);padding:2px 4px;flex-wrap:wrap;
   }
+  .footnote button.danger{
+    width:auto;font-size:var(--fs-s);padding:3px 10px;background:transparent;
+    color:var(--bad);border-color:rgba(248,113,113,.4);
+  }
+  .footnote button.danger:hover{color:var(--bad);border-color:var(--bad)}
+
+  /* --- Playbook library ------------------------------------------ */
+  #playbooks{display:grid;gap:var(--sp-2)}
+  #playbooks .tray{margin-bottom:0}
+  .pbin{padding:2px 14px 14px}
+  .pbin ol{margin:8px 0 0;padding-left:18px;display:grid;gap:5px;font-size:var(--fs-m);color:var(--txt)}
+  .pbin li::marker{color:var(--accent)}
 
   /* --- Add account + bulk import --------------------------------- */
   .addbox{
@@ -601,6 +613,16 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     <div id="flip-total" class="fliptotal"></div>
   </section>
 
+  <!-- Playbook library — step-by-step guides for the common recovery scenarios -->
+  <section class="panel" id="playbook-panel">
+    <h2>Playbook library</h2>
+    <p class="muted" style="margin:0 0 var(--sp-3)">
+      Step-by-step runs for the classic stuck-money situations. Every step is something
+      you do yourself, through the service's official channels.
+    </p>
+    <div id="playbooks"></div>
+  </section>
+
   <!-- Activity log -->
   <section class="panel">
     <h2>Activity log</h2>
@@ -611,6 +633,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
   <div class="footnote">
     <span>Encrypted at rest &middot; offline &middot; no network requests</span>
     <span id="foot-meta"></span>
+    <button id="wipe-btn" class="ghost danger" type="button">Wipe vault</button>
   </div>
 </main>
 
@@ -984,6 +1007,88 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     const b = document.createElement("b");
     b.textContent = usd(total);
     totalEl.appendChild(b);
+  }
+
+  /* ---------------------------------------------------------------
+   * Playbook library — step-by-step runs for the classic stuck-money
+   * scenarios. Static content, rendered once at boot.
+   * ------------------------------------------------------------- */
+  const PLAYBOOKS = [
+    {
+      title: "Dormant gift card",
+      steps: [
+        "Check the real balance on the issuer's site or the number on the back — years-old cards routinely still carry value.",
+        "“Expired”? Push back: many US states restrict gift-card expiry and inactivity fees, and issuers often reissue expired cards on request.",
+        "Small remnants: stack them onto one purchase at the register, or reload them into the store's app so they stop being losable plastic.",
+        "Won't ever shop there? Sell it on a gift-card marketplace and accept the haircut — 80–90% of face value beats 0%."
+      ]
+    },
+    {
+      title: "Store credit at a merchant you no longer shop at",
+      steps: [
+        "Verify the credit still exists — quote the original order or return number from your email.",
+        "Ask support to reissue it to your original payment method, as a refund check, or by ACH — the first “no” is often policy theater; ask again politely.",
+        "Still credit-only? Buy something universally resellable or giftable and convert it that way.",
+        "Log the outcome here so future-you doesn't re-fight the same battle."
+      ]
+    },
+    {
+      title: "Stranded payment-app balance",
+      steps: [
+        "Recover the login first: the app's official flow, using the old email address or phone number the account was created with.",
+        "Expect an identity re-verification (photo ID) before the app releases a dormant balance.",
+        "Move the full balance out by standard ACH — free — and close the loop by removing stored payment methods.",
+        "Account already closed? The balance may have escheated: search your state's unclaimed property database for it."
+      ]
+    },
+    {
+      title: "Locked-out exchange account",
+      steps: [
+        "Open a ticket through the exchange's official support portal only — never through anyone who contacts you first.",
+        "Prepare KYC documents (ID, proof of address, old statements); dormant-account reviews take days to weeks.",
+        "Search your old email for the exchange's name — “identity verification” and “withdrawal confirmation” threads prove the account is yours.",
+        "Once you're in: sell to USD, withdraw via ACH, and decide whether the account should keep existing."
+      ]
+    },
+    {
+      title: "Half-remembered wallet",
+      steps: [
+        "Inventory everywhere a wallet could live: old phones, laptops, browser extensions, hardware wallets, USB sticks, paper in drawers.",
+        "Find the recovery material — a 12/24-word recovery phrase, keystore file, or hardware device — and record its LOCATION in this vault, never the phrase itself.",
+        "Restore the phrase into a fresh, official wallet app for that chain, offline if possible — and never type it into a website.",
+        "Found funds? Sweep them to a wallet you fully control, then check the address for unclaimed airdrops on chains you actually used."
+      ]
+    },
+    {
+      title: "Unclaimed property sweep",
+      steps: [
+        "Search every state you've ever lived in — each runs its own free, official unclaimed-property database.",
+        "Sweep for: final paychecks, security deposits, utility refunds, insurance payouts, old bank and brokerage accounts.",
+        "File claims directly with the state — it is always free; anyone charging a “finder's fee” for this is selling you your own money.",
+        "Add each filed claim as an account here (type: other) so the follow-up doesn't evaporate like the original balance did."
+      ]
+    }
+  ];
+
+  function renderPlaybooks(){
+    const host = $("playbooks");
+    PLAYBOOKS.forEach((pb) => {
+      const d = document.createElement("details");
+      d.className = "tray";
+      const s = document.createElement("summary");
+      s.textContent = pb.title;
+      const body = document.createElement("div");
+      body.className = "pbin";
+      const ol = document.createElement("ol");
+      pb.steps.forEach((step) => {
+        const li = document.createElement("li");
+        li.textContent = step;
+        ol.appendChild(li);
+      });
+      body.appendChild(ol);
+      d.append(s, body);
+      host.appendChild(d);
+    });
   }
 
   // Ephemeral UI state — deliberately NOT part of DATA (never persisted).
@@ -1740,7 +1845,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = "frc-vault-backup-" + stamp().slice(0, 10) + ".json";
+    a.download = "fund_vault_backup.json";   // exact name — .gitignore excludes it
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -1748,6 +1853,29 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     logEvent("Exported encrypted backup");
     render();
     save().catch(() => {});                   // failure already surfaced by save()
+  }
+
+  // Strict backup validation — a malformed file must be rejected BEFORE it can
+  // replace a working vault. Returns an error string, or null when the blob is
+  // a plausible sealed vault (v2 self-describing, or v1 legacy without kdf).
+  // The blob format itself is unchanged — this only refuses corrupt imposters.
+  function validateBackupBlob(vault){
+    if (!vault || typeof vault !== "object" || Array.isArray(vault)) return "no encrypted vault found in the file";
+    if (typeof vault.iv !== "string" || typeof vault.ct !== "string") return "no encrypted vault found in the file";
+    let iv, ct;
+    try { iv = b64ToBytes(vault.iv); ct = b64ToBytes(vault.ct); }
+    catch (e){ return "the vault data is not valid base64"; }
+    if (iv.length !== 12) return "the IV is the wrong size — the file looks corrupted";
+    if (!ct.length) return "the ciphertext is empty";
+    if (vault.kdf){
+      const k = vault.kdf;
+      if (k.alg !== "PBKDF2" || typeof k.salt !== "string") return "unrecognized KDF parameters";
+      try { if (b64ToBytes(k.salt).length !== 16) return "the salt is the wrong size"; }
+      catch (e){ return "the salt is not valid base64"; }
+      if (!Number.isInteger(k.iterations) || k.iterations < 1000 || k.iterations > 1e8)
+        return "implausible KDF iteration count";
+    }
+    return null;
   }
 
   // Restore from the gate (works with no vault present — the disaster case).
@@ -1760,14 +1888,18 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       let vault = null;
       try {
         const obj = JSON.parse(String(reader.result));
-        vault = (obj && obj.frcBackup && obj.vault) ? obj.vault : obj;   // raw blob accepted too
+        if (obj && obj.frcBackup){
+          if (!obj.vault){ setGateBanner("Backup rejected — the wrapper has no vault inside it.", false); return; }
+          vault = obj.vault;
+        } else {
+          vault = obj;                                   // raw blob accepted too
+        }
       } catch (e){ setGateBanner("Not a valid backup — the file is not JSON.", false); return; }
-      const looksV2 = vault && typeof vault.iv === "string" && typeof vault.ct === "string" &&
-                      vault.kdf && typeof vault.kdf.salt === "string";
-      const looksV1 = vault && typeof vault.iv === "string" && typeof vault.ct === "string" && !vault.kdf;
-      if (!looksV2 && !looksV1){
-        setGateBanner("Not a valid backup — no encrypted vault found in the file.", false); return;
+      const bad = validateBackupBlob(vault);
+      if (bad){
+        setGateBanner("Backup rejected — " + bad + ".", false); return;
       }
+      const looksV1 = !vault.kdf;
       if (looksV1 && !lsGet(SALT_KEY)){
         setGateBanner("Old-format backup: it needs the separate salt from its original browser. Unlock it there once (it upgrades itself), then export again.", false);
         return;
@@ -1785,6 +1917,19 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     reader.readAsText(file);
   }
 
+  // Wipe = destroy the encrypted vault in THIS browser. Two explicit gates:
+  // a typed WIPE, then a final native confirm. Exported files are untouched.
+  function wipeVault(){
+    const typed = prompt(
+      "This erases the encrypted vault from this browser. Exported backup files are NOT touched.\n\n" +
+      "Type WIPE (all caps) to continue:");
+    if (typed !== "WIPE") return;
+    if (!confirm("Final confirmation — erase the vault now? Without an exported backup the data is unrecoverable.")) return;
+    lsRemove(VAULT_KEY);
+    lsRemove(SALT_KEY);
+    location.reload();
+  }
+
   /* ---------------------------------------------------------------
    * Boot / event wiring
    * ------------------------------------------------------------- */
@@ -1800,6 +1945,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
     populateTypeSelect();
     renderInboxTerms();
+    renderPlaybooks();
     setGateMode();
 
     // Wire controls. Enter in either field triggers unlock.
@@ -1821,6 +1967,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     syncCryptoFields();
     $("bulk-btn").addEventListener("click", bulkImport);
     $("export-btn").addEventListener("click", exportBackup);
+    $("wipe-btn").addEventListener("click", wipeVault);
     $("restore-btn").addEventListener("click", () => $("restore-file").click());
     $("restore-file").addEventListener("change", (e) => {
       restoreBackup(e.target.files && e.target.files[0]);
