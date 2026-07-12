@@ -221,13 +221,15 @@
   #undo-toast.show{display:flex}
   #undo-toast button{width:auto;font-size:var(--fs-s);padding:4px 12px;color:var(--accent);border-color:var(--accent)}
 
-  /* Recovery route — expandable per-account info box under the row */
+  /* Recovery route — expandable per-account info box under the row
+     (info-styled: blue tint, #60a5fa left border, "▸ " headline) */
   .route{
     display:none;padding:2px 14px 14px 26px;
-    border-top:1px dashed var(--line);background:rgba(63,208,201,.02);
+    border-top:1px dashed var(--line);
+    background:rgba(96,165,250,.05);border-left:3px solid var(--info);
   }
   .route.open{display:block}
-  .route .rhead{font-size:var(--fs-m);color:var(--accent);margin:11px 0 7px;font-weight:600}
+  .route .rhead{font-size:var(--fs-m);color:var(--info);margin:11px 0 7px;font-weight:600}
   .route .rpos{margin:0 0 7px;font-size:var(--fs-s);color:var(--dim)}
   .route ol{margin:0;padding-left:18px;display:grid;gap:5px;font-size:var(--fs-m);color:var(--txt)}
   .route li::marker{color:var(--accent)}
@@ -839,7 +841,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
    * ------------------------------------------------------------- */
   const ROUTES = {
     "store-credit": {
-      headline: "Convert store credit into something you'd actually use — it earns nothing sitting there.",
+      headline: "No cash-out possible — spend it down on things you already buy, so it converts into cash you don't spend.",
       steps: [
         "Verify the balance on the merchant's site (or by phone) before planning anything around it.",
         "Spend it on things you already buy — treat it as cash at that store, not as bonus money.",
@@ -848,30 +850,32 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       ]
     },
     "gift-card": {
-      headline: "Spend it, bank it, or sell it — decide by how likely you are to ever shop there.",
+      headline: "Spend it, or resell it on a gift-card exchange for instant cash at roughly a 10–15% haircut.",
       steps: [
         "Check the balance first (issuer site, or the number on the back) — plenty of “empty” cards aren't.",
         "Apple/iTunes cards: redeem into your Apple Account balance; add retail cards to Apple Wallet so they can never get lost in a drawer again.",
         "Movie cards (AMC, Regal, Fandango): balances usually cover concessions too — burn them down before ticket prices climb.",
-        "Won't shop there? Sell it on a gift-card marketplace — expect an 8–20% haircut depending on brand demand.",
+        "Won't shop there? Sell it on a gift-card marketplace — expect a 10–15% haircut depending on brand demand.",
         "Never sell a card to a stranger over P2P payment or for crypto — that is the classic gift-card scam shape."
       ]
     },
     "credit-card": {
-      headline: "Redeem before devaluation — points only ever get cheaper.",
+      headline: "Redeem as a statement credit or transfer to a travel partner — points only ever get cheaper.",
       steps: [
         "Statement credit or direct deposit is the zero-effort floor (usually 1¢/point).",
         "Before settling, check transfer partners — travel transfers can beat 1¢/point; gift-card redemptions usually run below it.",
         "Cashing out as a statement credit closes the loop: a posted credit can't devalue or expire.",
+        "Negative balance AND points on top? Two separate pots: redeem the points, and claim the negative balance as a refund check or ACH — never as a cash advance.",
         "Watch inactivity clauses — some programs quietly void points after 12–24 months without activity."
       ]
     },
     "payment-app": {
-      headline: "App balances earn nothing and can be frozen — move them to your bank.",
+      headline: "Transfer the balance out to your linked bank, debit card, or Apple Pay — app balances earn nothing and can be frozen.",
       steps: [
         "Standard ACH transfer out is free (1–3 business days); instant transfer costs ~1.75% — urgency is the only reason to pay that.",
         "Never top up an app balance from a credit card — issuers treat it as a cash advance: fee plus interest from day one.",
         "Dormant account? Log in and move even $1 — activity resets the escheatment clock (states claim “abandoned” balances).",
+        "Blocked or banned? Even restricted accounts usually still let you withdraw the remaining balance — cash out to the linked bank or debit card immediately, before it locks completely.",
         "Locked out? Run the app's official recovery flow with your old phone number or email first — support won't act without it."
       ]
     },
@@ -912,11 +916,23 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     }
   };
 
-  // Assemble the route for one account: canned steps for its type, plus
-  // urgency/balance context computed from the account itself.
+  // Assemble the route for one account: a headline naming the single best move
+  // (picked from type + balance sign — this schema has no status/rewards
+  // fields, so a credit-card's positive balance IS its rewards value and a
+  // negative one is money the bank owes), the canned steps for its type, and
+  // urgency context computed from the account itself.
   function recommendRoute(a){
     const base = ROUTES[a && a.type] || ROUTES.other;
     const steps = base.steps.slice();
+    const bal = Number(a && a.balance) || 0;
+    let headline = base.headline;
+    if ((a && a.type) === "credit-card" && bal < 0){
+      headline = "Negative balance — the bank owes you: request a refund check or ACH, or spend it down on the card. Never take it as a cash advance — the fees destroy the value.";
+    } else if (!(bal > 0)){
+      headline = "Log in and verify the real balance first — zero on file doesn't mean zero exists; match the effort to what it's worth.";
+    } else if ((a && a.type) === "store-credit" && /fandango/i.test(String((a && a.name) || ""))){
+      headline = base.headline + " Fandango: buy the ticket and push the mobile pass into Apple Wallet.";
+    }
     const d = daysLeft(a && a.expires);
     let note = null;
     if (d !== null && d < 0){
@@ -924,10 +940,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     } else if (d !== null && d <= 14){
       steps.unshift("⚠ Expires " + (d === 0 ? "TODAY" : "in " + d + "d") + " — do this first.");
     }
-    if (!(Number(a && a.balance) > 0)){
-      note = (note ? note + " " : "") + "Value is $0/unknown — verify the real balance first and match effort to what it's worth.";
-    }
-    return { headline: base.headline, steps, note };
+    return { headline, steps, note };
   }
 
   /* ---------------------------------------------------------------
@@ -1713,7 +1726,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     const r = recommendRoute(a);
     const head = document.createElement("div");
     head.className = "rhead";
-    head.textContent = r.headline;
+    head.textContent = "▸ " + r.headline;
     box.appendChild(head);
 
     // Crypto position line: chain · shortened public address · parsed tokens.
