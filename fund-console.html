@@ -292,6 +292,7 @@
   .addbox button{align-self:end}
   .cryptorow{display:grid;grid-template-columns:1fr 1.6fr 2fr;gap:var(--sp-3)}
   .cryptorow[hidden]{display:none}
+  .cryptorow textarea{resize:vertical;line-height:1.5}
   .fliprow{display:grid;grid-template-columns:1fr 1.6fr 1fr;gap:var(--sp-3)}
   .fliprow[hidden]{display:none}
   #add-err{margin:0;grid-column:1/-1;font-size:var(--fs-m);color:var(--bad);min-height:0}
@@ -608,9 +609,10 @@
             <option value="">&mdash;</option>
             <option>Solana</option>
             <option>Ethereum</option>
-            <option>Polygon</option>
             <option>Base</option>
+            <option>BSC</option>
             <option>Bitcoin</option>
+            <option>Polygon</option>
             <option>other</option>
           </select>
         </div>
@@ -619,8 +621,9 @@
           <input id="a-address" placeholder="0x&hellip; / bc1&hellip; / base58" spellcheck="false">
         </div>
         <div>
-          <label for="a-tokens">Tokens (qty SYM @ price)</label>
-          <input id="a-tokens" placeholder="2.5 SOL @ 145, 300 USDC @ 1" spellcheck="false">
+          <label for="a-tokens">Tokens (one per line)</label>
+          <textarea id="a-tokens" rows="2" spellcheck="false"
+                    placeholder="SOL | 2.5 | 340&#10;2.5 SOL @ 145 works too"></textarea>
         </div>
       </div>
       <p id="add-err" role="alert"></p>
@@ -761,23 +764,40 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     const n = Number(t);
     return Number.isFinite(n) ? n : null;
   }
-  // Token-position parsing: "2.5 SOL @ 145, 300 USDC @ 1" ->
-  // { list:[{qty, sym, price}], total }. The @price is user-supplied — the app
-  // is offline and never guesses market prices. Entries without a price still
-  // parse (price null) but contribute $0 to the total. Nothing parseable -> null.
+  // Token-position parsing. Two line formats, mixable across lines:
+  //   pipe: "SOL | 2.5 | 340"   (SYMBOL | amount | approx USD value of the position)
+  //   at:   "2.5 SOL @ 145"     (qty SYM @ per-unit price; comma-separable)
+  // Every USD figure is user-supplied — the app is offline and never guesses
+  // market prices. Unpriced entries still parse but contribute $0 to the
+  // total. Nothing parseable -> null.
   function parseTokens(s){
     const src = String(s == null ? "" : s).trim();
     if (!src) return null;
     const list = [];
     let total = 0;
-    src.split(",").forEach((part) => {
-      const m = part.trim().match(/^([\d.]+)\s+([A-Za-z][A-Za-z0-9]{1,11})(?:\s*@\s*\$?([\d.]+))?$/);
-      if (!m) return;
-      const qty = Number(m[1]);
-      if (!Number.isFinite(qty)) return;
-      const price = m[3] != null ? Number(m[3]) : null;
-      list.push({ qty, sym: m[2].toUpperCase(), price: Number.isFinite(price) ? price : null });
-      if (Number.isFinite(price)) total += qty * price;
+    src.split("\n").forEach((line) => {
+      if (line.includes("|")){
+        const p = line.split("|").map((t) => t.trim());
+        const sym = (p[0] || "").match(/^[A-Za-z][A-Za-z0-9]{1,11}$/);
+        const qty = Number(p[1]);
+        if (!sym || !Number.isFinite(qty)) return;
+        const raw = p.length > 2 ? Number(String(p[2]).replace(/[$,\s]/g, "")) : NaN;
+        const value = Number.isFinite(raw) ? raw : null;
+        list.push({ qty, sym: sym[0].toUpperCase(), price: null, value });
+        if (value !== null) total += value;
+        return;
+      }
+      line.split(",").forEach((part) => {
+        const m = part.trim().match(/^([\d.]+)\s+([A-Za-z][A-Za-z0-9]{1,11})(?:\s*@\s*\$?([\d.]+))?$/);
+        if (!m) return;
+        const qty = Number(m[1]);
+        if (!Number.isFinite(qty)) return;
+        const price = m[3] != null ? Number(m[3]) : null;
+        const priced = Number.isFinite(price);
+        list.push({ qty, sym: m[2].toUpperCase(), price: priced ? price : null,
+                    value: priced ? qty * price : null });
+        if (priced) total += qty * price;
+      });
     });
     return list.length ? { list, total } : null;
   }
@@ -807,7 +827,8 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     "unclaimed", "e-gift", "prepaid card", "your order credit",
     // Crypto — dormant exchange accounts and wallets announce themselves too:
     "airdrop", "staking rewards", "withdrawal confirmation",
-    "identity verification", "your crypto", "wallet backup"
+    "identity verification", "your crypto", "wallet backup",
+    "deposit confirmation", "withdrawal", "your recovery phrase", "verify your wallet"
   ];
 
   // Whole days from today (local midnight) until a YYYY-MM-DD expiry.
@@ -918,22 +939,24 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       ]
     },
     "crypto-exchange": {
-      headline: "Dormant exchange money is one identity re-verification away — then get it off the platform.",
+      headline: "Consolidate small balances, then withdraw to a wallet you control — or sell to fiat and cash out to your linked bank.",
       steps: [
         "Re-verify identity (KYC) first — dormant accounts usually demand it before any withdrawal.",
         "Check the rewards/earn tab while you're in — staking payouts and referral bonuses pile up unnoticed.",
-        "Sell to USD on the exchange and withdraw via ACH — usually free; wires cost more.",
-        "Mind withdrawal minimums and daily limits; emptying a large balance can take several days."
+        "Consolidate dust into one asset before moving anything — one withdrawal, one fee.",
+        "Sell to USD and withdraw via ACH (usually free), or send on-chain to your own wallet — pick one exit and empty the account.",
+        "Watch withdrawal minimums and network-fee thresholds — they can trap small balances on the platform.",
+        "Blocked or frozen? Many exchanges still permit withdrawing existing holdings even when trading is restricted — export your transaction history first, then attempt an on-chain withdrawal to your own wallet before anything else."
       ]
     },
     "crypto-wallet": {
-      headline: "For self-custody, access — not price — is the real risk. Secure access first.",
+      headline: "You hold the keys — nothing can freeze it. Consolidate dust, swap illiquid tokens to a liquid asset, and mind the gas.",
       steps: [
         "Confirm you can still open the wallet, and record WHERE the recovery material is kept (note the location here — never the phrase itself).",
         "Lost access? Locate your recovery phrase and restore it into a fresh wallet app for that chain — the phrase IS the wallet; the old app is irrelevant.",
-        "Dust across chains? Swap small balances to USDC on a DEX while fees are low — Solana and Polygon cost cents, Ethereum mainnet can eat a small balance whole.",
+        "Consolidate dust and swap illiquid or worthless tokens to a liquid asset (SOL, ETH, or USDC) on a DEX — watch gas so you don't spend more than the tokens are worth: Solana and Polygon cost cents, Ethereum mainnet can eat a small balance whole.",
         "Bridging between chains means paying fees twice — for small amounts, swap and off-ramp on the chain the funds already live on.",
-        "Check airdrop eligibility for chains you've actually used — official project claim pages only; anyone DMing you about an airdrop is running a scam."
+        "Unexpected unknown tokens may be airdrops worth claiming — check official project claim pages only, and never sign a transaction from an unsolicited token or link: scam airdrops drain wallets."
       ]
     },
     "reward-item": {
@@ -1853,7 +1876,9 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
         a.chain && ("Chain: " + a.chain),
         addr && ("addr " + addr),
         tk && tk.list.map((t) =>
-          t.qty + " " + t.sym + (t.price !== null ? " @ " + usd(t.price) : "")).join(", ")
+          t.qty + " " + t.sym + (t.price !== null ? " @ " + usd(t.price)
+                               : t.value !== null ? " (" + usd(t.value) + ")" : "")).join(", "),
+        tk && tk.total > 0 && (usd(tk.total) + " total")
       ].filter(Boolean).join(" · ");
       box.appendChild(pos);
     }
