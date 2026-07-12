@@ -232,23 +232,34 @@
   #add-err{margin:0;grid-column:1/-1;font-size:var(--fs-m);color:var(--bad);min-height:0}
   #add-err:empty{display:none}
 
-  #bulk{margin-bottom:var(--sp-2);border:1px solid var(--line);border-radius:var(--radius);background:var(--panel2)}
-  #bulk summary{
+  .tray{margin-bottom:var(--sp-2);border:1px solid var(--line);border-radius:var(--radius);background:var(--panel2)}
+  .tray summary{
     list-style:none;cursor:pointer;padding:10px 14px;
     font-size:var(--fs-s);letter-spacing:1px;text-transform:uppercase;color:var(--dim);
     transition:background .15s var(--ease),color .15s var(--ease);
   }
-  #bulk summary::-webkit-details-marker{display:none}
-  #bulk summary::before{content:"▸ ";color:var(--accent)}
-  #bulk[open] summary::before{content:"▾ "}
-  #bulk summary:hover{background:var(--accent-soft);color:var(--txt)}
-  #bulk summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .tray summary::-webkit-details-marker{display:none}
+  .tray summary::before{content:"▸ ";color:var(--accent)}
+  .tray[open] summary::before{content:"▾ "}
+  .tray summary:hover{background:var(--accent-soft);color:var(--txt)}
+  .tray summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
   #bulk .bulkin{padding:0 14px 14px;display:grid;gap:var(--sp-3)}
   #bulk textarea{min-height:110px;resize:vertical;font-size:var(--fs-m);line-height:1.7}
   #bulk .bulkrow{display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap}
   #bulk-report{display:grid;gap:2px;font-size:var(--fs-m)}
   #bulk-report .ok{color:var(--accent)}
   #bulk-report .err{color:var(--bad)}
+
+  /* Inbox search terms — click-to-copy chips ("Find accounts you forgot") */
+  #inbox-terms .termsin{padding:0 14px 14px;display:grid;gap:var(--sp-3)}
+  .terms{display:flex;flex-wrap:wrap;gap:var(--sp-2)}
+  .term{
+    width:auto;font-size:var(--fs-m);padding:5px 12px;border-radius:16px;
+    background:var(--panel);color:var(--txt);
+  }
+  .term:hover{border-color:var(--accent);color:var(--accent)}
+  .term.copied{border-color:var(--good);color:var(--good)}
+  #terms-hint{min-height:18px;margin:0}
 
   /* Gate: success-tinted banner (restore) + restore control */
   #gate .banner.ok{background:#0f201e;border-color:#1c3b3a;color:var(--accent)}
@@ -456,7 +467,7 @@
       <p id="add-err" role="alert"></p>
     </form>
 
-    <details id="bulk">
+    <details id="bulk" class="tray">
       <summary>Bulk import</summary>
       <div class="bulkin">
         <textarea id="bulk-text" spellcheck="false"
@@ -469,6 +480,18 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
           <span class="muted">Types: store-credit, credit-card, payment-app, gift-card, crypto-exchange, crypto-wallet, reward-item, other</span>
         </div>
         <div id="bulk-report"></div>
+      </div>
+    </details>
+
+    <details id="inbox-terms" class="tray">
+      <summary>Find accounts you forgot</summary>
+      <div class="termsin">
+        <p class="muted">
+          Money hides in old email. Click a term to copy it, then search your inbox —
+          every hit is a lead: a balance, a code, a credit you never used.
+        </p>
+        <div id="terms-list" class="terms"></div>
+        <p id="terms-hint" class="muted" aria-live="polite"></p>
       </div>
     </details>
 
@@ -492,7 +515,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 <div id="totalsbar" role="status">
   <span class="state">&#9670; UNLOCKED</span>
   <span class="mid" id="tb-mid"></span>
-  <span class="total">TOTAL<b id="tb-total" class="num">$0.00</b></span>
+  <span class="total">OUTSTANDING<b id="tb-total" class="num">$0.00</b></span>
 </div>
 
 <!-- ============================================================= -->
@@ -571,6 +594,15 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     "reward-item":"Reward items",    "other":"Other"
   };
   const TYPE_ORDER = Object.keys(TYPE_LABELS);
+
+  // Inbox search queries that surface forgotten balances. Each chip copies the
+  // term to the clipboard so it can be pasted straight into an email search.
+  const INBOX_TERMS = [
+    "gift card", "your gift card balance", "store credit", "merchandise credit",
+    "reward certificate", "you've earned", "points expire", "expiring soon",
+    "your refund", "refund processed", "promo code", "account balance",
+    "unclaimed", "e-gift", "prepaid card", "your order credit"
+  ];
 
   // Ephemeral UI state — deliberately NOT part of DATA (never persisted).
   const UI = { filter:"", collapsed:new Set() };
@@ -1064,6 +1096,43 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     });
   }
 
+  // Copy an inbox search term. navigator.clipboard needs a secure context and
+  // can be denied on file:// — fall back to a transient textarea + execCommand.
+  async function copyTerm(term, chip){
+    let ok = false;
+    try { await navigator.clipboard.writeText(term); ok = true; }
+    catch (e){
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = term;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand("copy");
+        ta.remove();
+      } catch (e2){ ok = false; }
+    }
+    chip.classList.toggle("copied", ok);
+    $("terms-hint").textContent = ok
+      ? "Copied “" + term + "” — paste it into your inbox search."
+      : "Copy blocked by the browser — select the term and copy it manually.";
+    if (ok) setTimeout(() => chip.classList.remove("copied"), 1200);
+  }
+
+  // Static chip list; built once at boot (terms never change at runtime).
+  function renderInboxTerms(){
+    const host = $("terms-list");
+    INBOX_TERMS.forEach((term) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "term";
+      b.textContent = term;
+      b.addEventListener("click", () => copyTerm(term, b));
+      host.appendChild(b);
+    });
+  }
+
   async function addAccount(e){
     e.preventDefault();
     const err = $("add-err");
@@ -1206,6 +1275,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     }
 
     populateTypeSelect();
+    renderInboxTerms();
     setGateMode();
 
     // Wire controls. Enter in either field triggers unlock.
