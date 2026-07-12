@@ -201,6 +201,22 @@
     background:transparent;color:var(--dim);border-radius:12px;
   }
   .row .recover:hover,.row .recover[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
+  .row .del{
+    flex:none;width:auto;font-size:var(--fs-xs);padding:3px 8px;border-radius:12px;
+    background:transparent;color:var(--dim);
+  }
+  .row .del:hover{color:var(--bad);border-color:var(--bad)}
+
+  /* Undo toast — floats above the totals bar after a deletion */
+  #undo-toast{
+    position:fixed;right:var(--sp-5);bottom:56px;z-index:60;
+    display:none;align-items:center;gap:var(--sp-3);
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:10px 14px;font-size:var(--fs-m);color:var(--txt);
+    box-shadow:0 12px 30px rgba(0,0,0,.45);
+  }
+  #undo-toast.show{display:flex}
+  #undo-toast button{width:auto;font-size:var(--fs-s);padding:4px 12px;color:var(--accent);border-color:var(--accent)}
 
   /* Recovery route — expandable per-account info box under the row */
   .route{
@@ -634,11 +650,14 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
   <!-- Footer -->
   <div class="footnote">
-    <span>Encrypted at rest &middot; offline &middot; no network requests</span>
+    <span>Encrypted at rest &middot; offline &middot; auto-locks after 10 idle minutes &middot; no network requests</span>
     <span id="foot-meta"></span>
     <button id="wipe-btn" class="ghost danger" type="button">Wipe vault</button>
   </div>
 </main>
+
+<!-- Undo toast — one-shot restore after an account deletion. -->
+<div id="undo-toast" role="status"></div>
 
 <!-- Status line — fixed tmux-style totals bar, shown while unlocked. -->
 <div id="totalsbar" role="status">
@@ -1312,6 +1331,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       $("chips").classList.add("on");
       $("lock-btn").style.display = "";
       setLockIndicator(true);
+      startAutoLock();
       render();
 
       // #1 — persist the unlock/create entry. save() shows a loud banner + throws
@@ -1325,6 +1345,69 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
   // Lock by reloading — the derived key and plaintext DATA leave memory.
   function lock(){ location.reload(); }
+
+  // Auto-lock: after AUTO_LOCK_MIN with no activity, the vault locks itself
+  // (an open vault on an unattended machine defeats the whole encryption).
+  const AUTO_LOCK_MIN = 10;
+  let idleTimer = null;
+  function armAutoLock(){
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(lock, AUTO_LOCK_MIN * 60000);
+  }
+  function startAutoLock(){
+    ["pointerdown", "keydown", "wheel", "touchstart"].forEach((ev) =>
+      document.addEventListener(ev, armAutoLock, { passive: true }));
+    armAutoLock();
+  }
+
+  /* ---------------------------------------------------------------
+   * Delete with one-shot undo — the removed account and its position
+   * survive in memory for a few seconds; a second delete (or the
+   * timer) finalizes the first. Nothing about undo is persisted.
+   * ------------------------------------------------------------- */
+  let pendingUndo = null;   // { account, index, timer }
+
+  function deleteAccount(a){
+    const i = DATA.accounts.indexOf(a);
+    if (i < 0) return;
+    DATA.accounts.splice(i, 1);
+    logEvent("Removed “" + ((a && a.name) || "(unnamed)") + "” (" + usd(a && a.balance) + ")");
+    if (pendingUndo) clearTimeout(pendingUndo.timer);
+    pendingUndo = { account: a, index: i, timer: setTimeout(hideUndo, 6000) };
+    showUndoToast(a);
+    render();
+    save().catch(() => {});               // failure already surfaced by save()
+  }
+
+  function undoDelete(){
+    if (!pendingUndo) return;
+    const { account, index } = pendingUndo;
+    DATA.accounts.splice(Math.min(index, DATA.accounts.length), 0, account);
+    logEvent("Restored “" + ((account && account.name) || "(unnamed)") + "” (undo)");
+    hideUndo();
+    render();
+    save().catch(() => {});
+  }
+
+  function showUndoToast(a){
+    const t = $("undo-toast");
+    if (!t) return;
+    t.textContent = "";
+    const s = document.createElement("span");
+    s.textContent = "Removed “" + ((a && a.name) || "(unnamed)") + "”";
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = "Undo";
+    b.addEventListener("click", undoDelete);
+    t.append(s, b);
+    t.classList.add("show");
+  }
+
+  function hideUndo(){
+    if (pendingUndo){ clearTimeout(pendingUndo.timer); pendingUndo = null; }
+    const t = $("undo-toast");
+    if (t) t.classList.remove("show");
+  }
 
   /* ---------------------------------------------------------------
    * Rendering  (reusable stub — expand the sections below later)
@@ -1608,6 +1691,15 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       btn.textContent = open ? "Recover ▾" : "Recover ▸";
       if (open && !box.hasChildNodes()) renderRoute(box, a);   // build lazily, once
     });
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "del";
+    del.textContent = "✕";
+    del.title = "Remove account";
+    del.setAttribute("aria-label", "Remove " + ((a && a.name) || "account"));
+    del.addEventListener("click", () => deleteAccount(a));
+    row.appendChild(del);
 
     const wrap = document.createElement("div");
     wrap.append(row, box);
