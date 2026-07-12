@@ -199,6 +199,7 @@
   .row .tag.ok{color:var(--good);border-color:rgba(74,222,128,.35)}
   .row .tag.expired{color:var(--dim);border-color:var(--line)}
   .row .bal{flex:none;margin-left:auto;color:var(--txt);font-variant-numeric:tabular-nums}
+  .row .flipnet{flex:none;color:var(--gold);font-size:var(--fs-m);font-variant-numeric:tabular-nums}
   .row .recover{
     flex:none;width:auto;font-size:var(--fs-xs);padding:3px 9px;letter-spacing:.5px;
     background:transparent;color:var(--dim);border-radius:12px;
@@ -234,6 +235,11 @@
   .route ol{margin:0;padding-left:18px;display:grid;gap:5px;font-size:var(--fs-m);color:var(--txt)}
   .route li::marker{color:var(--accent)}
   .route .rnote{margin:9px 0 0;font-size:var(--fs-s);color:var(--warn)}
+  .route .rgold{
+    margin:0 0 9px;padding:9px 12px;border-radius:6px;
+    border:1px solid rgba(224,179,65,.5);background:rgba(224,179,65,.06);
+    color:var(--gold);font-size:var(--fs-m);line-height:1.5;
+  }
 
   /* --- Empty states ---------------------------------------------- */
   .empty{
@@ -286,6 +292,8 @@
   .addbox button{align-self:end}
   .cryptorow{display:grid;grid-template-columns:1fr 1.6fr 2fr;gap:var(--sp-3)}
   .cryptorow[hidden]{display:none}
+  .fliprow{display:grid;grid-template-columns:1fr 1.6fr 1fr;gap:var(--sp-3)}
+  .fliprow[hidden]{display:none}
   #add-err{margin:0;grid-column:1/-1;font-size:var(--fs-m);color:var(--bad);min-height:0}
   #add-err:empty{display:none}
 
@@ -364,6 +372,8 @@
     padding:2px 9px;border-radius:3px;
   }
   #totalsbar .mid{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #totalsbar .flip{flex:none;color:var(--dim)}
+  #totalsbar .flip b{color:var(--gold);font-size:var(--fs-b);font-weight:600;font-variant-numeric:tabular-nums;margin-left:6px}
   #totalsbar .total{margin-left:auto;flex:none;color:var(--dim)}
   #totalsbar .total b{color:var(--accent);font-size:var(--fs-b);font-weight:600;font-variant-numeric:tabular-nums;margin-left:6px}
 
@@ -398,6 +408,7 @@
     .addbox{grid-template-columns:1fr 1fr}
     .addbox button{grid-column:1/-1;align-self:auto}
     .cryptorow{grid-template-columns:1fr}
+    .fliprow{grid-template-columns:1fr}
   }
   @media (max-width:520px){
     .row .note{display:none}
@@ -545,6 +556,7 @@
       <select id="sort" aria-label="Sort accounts">
         <option value="priority">Sort: priority (expiry+value)</option>
         <option value="value">Sort: value</option>
+        <option value="flip">Sort: highest flip profit</option>
         <option value="expiration">Sort: expiring soonest</option>
         <option value="name">Sort: name</option>
       </select>
@@ -572,6 +584,22 @@
       <div class="wide">
         <label for="a-notes">Notes</label>
         <input id="a-notes" placeholder="Which email it's under, last 4 digits, where the code lives&hellip;" spellcheck="false">
+      </div>
+      <div id="flip-fields" class="wide fliprow" hidden>
+        <div>
+          <label for="a-cost">Cost (0 if free)</label>
+          <input id="a-cost" inputmode="decimal" placeholder="0.00">
+        </div>
+        <div>
+          <label for="a-venue">Resale venue</label>
+          <select id="a-venue">
+            <option value="">&mdash; best venue &mdash;</option>
+          </select>
+        </div>
+        <div>
+          <label for="a-ship">Shipping (est.)</label>
+          <input id="a-ship" inputmode="decimal" placeholder="0.00">
+        </div>
       </div>
       <div id="crypto-fields" class="wide cryptorow" hidden>
         <div>
@@ -668,6 +696,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 <div id="totalsbar" role="status">
   <span class="state">&#9670; UNLOCKED</span>
   <span class="mid" id="tb-mid"></span>
+  <span class="flip" id="tb-flip-wrap" hidden>FLIP POTENTIAL<b id="tb-flip" class="num"></b></span>
   <span class="total">OUTSTANDING<b id="tb-total" class="num">$0.00</b></span>
 </div>
 
@@ -805,10 +834,12 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
   // Priority score = value × urgency: 5× with ≤14d to live (money actively
   // evaporating), 2.5× ≤45d, 1× with no or far-off expiry, 0.1× once expired
-  // (dead value sinks to the bottom). Base is balance + rewards; no rewards
-  // field exists yet, so the term reads 0. $0 ties break in the sorter.
+  // (dead value sinks to the bottom). Base is balance + rewards + flip net,
+  // so a flippable item with a near expiry ranks at the very top; no rewards
+  // field exists yet, so that term reads 0. $0 ties break in the sorter.
   function priority(a){
-    const base = (Number(a && a.balance) || 0) + (Number(a && a.rewards) || 0);
+    const base = (Number(a && a.balance) || 0) + (Number(a && a.rewards) || 0)
+               + Math.max(0, flipProfit(a) || 0);
     const d = daysLeft(a && a.expires);
     let urgency = 1;
     if (d !== null){
@@ -824,6 +855,13 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
   const SORTERS = {
     priority:   (a, b) => (priority(b) - priority(a)) || SORTERS.expiration(a, b),
     value:      (a, b) => (Number(b && b.balance) || 0) - (Number(a && a.balance) || 0),
+    flip: (a, b) => {
+      const fa = flipProfit(a), fb = flipProfit(b);
+      if (fa === null && fb === null) return 0;
+      if (fa === null) return 1;                 // non-flippables sink
+      if (fb === null) return -1;
+      return fb - fa;
+    },
     expiration: (a, b) => {
       const da = daysLeft(a && a.expires), db = daysLeft(b && b.expires);
       if (da === null && db === null) return 0;
@@ -956,20 +994,62 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     { name:"Facebook Marketplace", pct:0,    fixed:0,    ship:0,  note:"local pickup, cash — no fees" }
   ];
 
-  // Estimated cash in hand after a venue's percentage fee, fixed fee, and
-  // typical shipping. Can go negative: fees can eat a low-value item whole.
-  function flipProfit(value, venue){
-    const gross = Number(value) || 0;
-    return gross * (1 - venue.pct / 100) - venue.fixed - venue.ship;
+  // Net-in-hand for one account at one venue: resale (the tracked balance)
+  // minus the venue's percentage + fixed fees, the acquisition cost, and
+  // shipping. A user-entered ship estimate overrides the venue's typical
+  // cost — except at no-ship venues (local pickup), where shipping stays $0.
+  // Can go negative: fees can eat a low-value item whole.
+  function venueNetFor(a, venue){
+    const resale = Number(a && a.balance) || 0;
+    const cost   = Number(a && a.cost)    || 0;
+    const shipIn = Number(a && a.ship)    || 0;
+    const ship   = venue.ship === 0 ? 0 : (shipIn > 0 ? shipIn : venue.ship);
+    return resale * (1 - venue.pct / 100) - venue.fixed - cost - ship;
   }
 
-  function bestVenue(value){
+  function bestVenueFor(a){
     let best = null;
     VENUES.forEach((v) => {
-      const net = flipProfit(value, v);
+      const net = venueNetFor(a, v);
       if (!best || net > best.net) best = { venue: v, net };
     });
     return best;
+  }
+
+  // Net flip profit for a reward item — at its chosen venue when one is set,
+  // otherwise at the best venue. null when not flippable (wrong type, or no
+  // resale value tracked), so non-items never enter the flip math.
+  function flipProfit(a){
+    if (!a || a.type !== "reward-item" || !(Number(a.balance) > 0)) return null;
+    const chosen = VENUES.find((v) => v.name === a.venue);
+    return chosen ? venueNetFor(a, chosen) : bestVenueFor(a).net;
+  }
+
+  // Items whose names scream "hot electronics" get timing advice appended.
+  const HOT_FLIP = /xbox|playstation|ps5|switch|console|gpu|iphone|macbook/i;
+
+  // Gold one-liner for a card: the full math at the chosen (or best) venue,
+  // a switch recommendation when another venue nets more, and timing advice
+  // for hot items. null when flipProfit is.
+  function flipAdvice(a){
+    if (flipProfit(a) === null) return null;
+    const chosen = VENUES.find((v) => v.name === a.venue) || bestVenueFor(a).venue;
+    const net = venueNetFor(a, chosen);
+    const cost = Number(a.cost) || 0;
+    const shipIn = Number(a.ship) || 0;
+    const ship = chosen.ship === 0 ? 0 : (shipIn > 0 ? shipIn : chosen.ship);
+    let s = usd(a.balance) + " resale on " + chosen.name +
+            " − " + chosen.pct + "% fee" + (chosen.fixed ? " − " + usd(chosen.fixed) : "") +
+            " − " + usd(cost) + " cost − " + usd(ship) + " ship = NET " + usd(net) + ".";
+    const best = bestVenueFor(a);
+    if (best.venue !== chosen && best.net > net + 0.005){
+      s += " Switch to " + best.venue.name + ": nets " + usd(best.net) +
+           " — " + usd(best.net - net) + " more.";
+    }
+    if (HOT_FLIP.test(String(a.name || ""))){
+      s += " Hot item: sell sealed/new-in-box and list around holiday or launch demand for peak margin — unopened moves fastest.";
+    }
+    return s;
   }
 
   // Flip desk: one expandable block per reward item (sorted by best net,
@@ -982,7 +1062,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
     const items = accounts
       .filter((a) => a && a.type === "reward-item")
-      .map((a) => ({ a, best: bestVenue(a.balance) }))
+      .map((a) => ({ a, best: bestVenueFor(a) }))
       .sort((x, y) => y.best.net - x.best.net);
 
     if (!items.length){
@@ -1026,7 +1106,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       thead.appendChild(hr);
       const tbody = document.createElement("tbody");
       VENUES.forEach((v) => {
-        const net = flipProfit(a.balance, v);
+        const net = venueNetFor(a, v);
         const tr = document.createElement("tr");
         if (v === best.venue) tr.className = "best";
         const tdV = document.createElement("td");
@@ -1147,12 +1227,12 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
    * Schema versioning — migrate() runs on every unlock so a vault
    * written by ANY older build opens cleanly instead of bricking.
    * ------------------------------------------------------------- */
-  const SCHEMA = 3;   // v3 adds chain / address / tokens (crypto accounts)
+  const SCHEMA = 4;   // v4 adds flip economics (cost / venue / ship) on reward items
 
   // Normalize a decrypted vault of any prior shape to the current schema.
   // Also the NaN firewall: every account field is coerced to a safe value.
-  // The full-shape rebuild below IS the v2 -> v3 step: older accounts simply
-  // gain empty chain/address/tokens fields.
+  // The full-shape rebuild below IS the upgrade path (v2 -> v3 -> v4): older
+  // accounts simply gain empty chain/address/tokens and flip fields.
   function migrate(d){
     if (!d || typeof d !== "object" || Array.isArray(d)) d = {};
     const from = Number(d.schemaVersion) || 1;
@@ -1167,7 +1247,10 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
         notes:   (a && a.notes != null) ? String(a.notes) : "",
         chain:   (a && a.chain != null) ? String(a.chain) : "",
         address: (a && a.address != null) ? String(a.address) : "",
-        tokens:  (a && a.tokens != null) ? String(a.tokens) : ""
+        tokens:  (a && a.tokens != null) ? String(a.tokens) : "",
+        cost:    Number.isFinite(Number(a && a.cost)) ? Number(a && a.cost) : 0,
+        venue:   (a && a.venue != null) ? String(a.venue) : "",
+        ship:    Number.isFinite(Number(a && a.ship)) ? Number(a && a.ship) : 0
       };
     });
     d.log = Array.isArray(d.log) ? d.log.map(String) : [];
@@ -1506,6 +1589,11 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     $("foot-meta").textContent  = plural(accounts.length, "account") + " · " + plural(DATA.log.length, "log entry", "log entries");
     $("tb-total").textContent   = usd(total);
 
+    // Flip profit (potential): best-case net across all reward items.
+    const flipTotal = accounts.reduce((s, a) => s + Math.max(0, flipProfit(a) || 0), 0);
+    $("tb-flip").textContent = usd(flipTotal);
+    $("tb-flip-wrap").hidden = !(flipTotal > 0);
+
     renderFlipDesk(accounts);
 
     const shown = renderAccounts(accounts);
@@ -1632,7 +1720,11 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       const count = document.createElement("span");
       count.className = "gcount"; count.textContent = "× " + list.length;
       const gsum = document.createElement("span");
-      gsum.className = "gsum"; gsum.textContent = usd(sum);
+      gsum.className = "gsum";
+      const flipSum = t === "reward-item"
+        ? list.reduce((s, a) => s + Math.max(0, flipProfit(a) || 0), 0)
+        : 0;
+      gsum.textContent = usd(sum) + (flipSum > 0 ? " · flip " + usd(flipSum) : "");
       head.append(arrow, label, count, gsum);
       head.addEventListener("click", () => {
         const closed = group.classList.toggle("closed");   // animate in place
@@ -1689,6 +1781,17 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     bal.textContent = usd(a && a.balance);
     row.appendChild(bal);
 
+    // Flip net — estimated cash-in-hand for flippable items, on the stat line.
+    const fp = flipProfit(a);
+    if (fp !== null){
+      const fn = document.createElement("span");
+      fn.className = "flipnet";
+      fn.textContent = "net " + usd(fp);
+      fn.title = "estimated flip net at " +
+        (VENUES.some((v) => v.name === (a && a.venue)) ? a.venue : "best venue");
+      row.appendChild(fn);
+    }
+
     // Recover ▸ — expands the recommended route inline under the row.
     // Pure DOM toggle: open/closed is not state, so render() stays simple.
     const btn = document.createElement("button");
@@ -1728,6 +1831,15 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     head.className = "rhead";
     head.textContent = "▸ " + r.headline;
     box.appendChild(head);
+
+    // Reward items: the flip math lands right where the decision happens.
+    const fa = flipAdvice(a);
+    if (fa){
+      const gold = document.createElement("p");
+      gold.className = "rgold";
+      gold.textContent = "◆ " + fa;
+      box.appendChild(gold);
+    }
 
     // Crypto position line: chain · shortened public address · parsed tokens.
     if (a && (a.chain || a.address || a.tokens)){
@@ -1852,11 +1964,22 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     });
   }
 
-  // Crypto sub-fields only apply to the two crypto types; keep them hidden
-  // (and their values out of new accounts) for everything else.
+  // Type-specific sub-fields: crypto fields for the two crypto types, flip
+  // economics for reward items. Keep the rest hidden (and their values out
+  // of new accounts) so the form never collects fields that don't apply.
   function isCryptoType(t){ return t === "crypto-exchange" || t === "crypto-wallet"; }
   function syncCryptoFields(){
     $("crypto-fields").hidden = !isCryptoType($("a-type").value);
+    $("flip-fields").hidden = $("a-type").value !== "reward-item";
+  }
+
+  function populateVenueSelect(){
+    const sel = $("a-venue");
+    VENUES.forEach((v) => {
+      const o = document.createElement("option");
+      o.value = v.name; o.textContent = v.name;
+      sel.appendChild(o);
+    });
   }
 
   async function addAccount(e){
@@ -1872,12 +1995,21 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     }
     const type = $("a-type").value;
     const crypto = isCryptoType(type);
+    const flip = type === "reward-item";
     const tokens = crypto ? $("a-tokens").value.trim() : "";
     // Token positions are the source of truth for value: when they parse to a
     // priced total, that total IS the balance — no double entry, no drift.
     const tk = parseTokens(tokens);
     const rolled = !!(tk && tk.total > 0);
     if (rolled) balance = tk.total;
+    // Flip economics (reward items): the tracked balance IS the estimated
+    // resale price; cost and shipping refine the net.
+    const cost = flip ? parseAmount($("a-cost").value) : 0;
+    const ship = flip ? parseAmount($("a-ship").value) : 0;
+    if (cost === null || ship === null){
+      err.textContent = "Cost and shipping must be numbers like 12.50 — or blank for $0.";
+      (cost === null ? $("a-cost") : $("a-ship")).focus(); return;
+    }
     DATA.accounts.push({
       name,
       type,
@@ -1886,7 +2018,10 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       notes: $("a-notes").value.trim(),
       chain:   crypto ? $("a-chain").value : "",
       address: crypto ? $("a-address").value.trim() : "",
-      tokens
+      tokens,
+      cost,
+      venue: flip ? $("a-venue").value : "",
+      ship
     });
     logEvent("Added “" + name + "” (" + usd(balance) + (rolled ? " from tokens)" : ")"));
     render();
@@ -1919,7 +2054,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
         errors.push("Line " + (i+1) + ": bad date “" + p[3] + "” — use YYYY-MM-DD or -"); return;
       }
       added.push({ name, type, balance, expires, notes: p.slice(4).join(" | "),
-                   chain:"", address:"", tokens:"" });
+                   chain:"", address:"", tokens:"", cost:0, venue:"", ship:0 });
     });
 
     added.forEach((a) => DATA.accounts.push(a));
@@ -2076,6 +2211,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     }
 
     populateTypeSelect();
+    populateVenueSelect();
     renderInboxTerms();
     renderPlaybooks();
     setGateMode();
