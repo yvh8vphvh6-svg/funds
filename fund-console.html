@@ -207,6 +207,7 @@
   }
   .route.open{display:block}
   .route .rhead{font-size:var(--fs-m);color:var(--accent);margin:11px 0 7px;font-weight:600}
+  .route .rpos{margin:0 0 7px;font-size:var(--fs-s);color:var(--dim)}
   .route ol{margin:0;padding-left:18px;display:grid;gap:5px;font-size:var(--fs-m);color:var(--txt)}
   .route li::marker{color:var(--accent)}
   .route .rnote{margin:9px 0 0;font-size:var(--fs-s);color:var(--warn)}
@@ -248,6 +249,8 @@
   }
   .addbox .wide{grid-column:1/-1}
   .addbox button{align-self:end}
+  .cryptorow{display:grid;grid-template-columns:1fr 1.6fr 2fr;gap:var(--sp-3)}
+  .cryptorow[hidden]{display:none}
   #add-err{margin:0;grid-column:1/-1;font-size:var(--fs-m);color:var(--bad);min-height:0}
   #add-err:empty{display:none}
 
@@ -359,6 +362,7 @@
     #totalsbar{padding:8px var(--sp-4)}
     .addbox{grid-template-columns:1fr 1fr}
     .addbox button{grid-column:1/-1;align-self:auto}
+    .cryptorow{grid-template-columns:1fr}
   }
   @media (max-width:520px){
     .row .note{display:none}
@@ -533,6 +537,28 @@
         <label for="a-notes">Notes</label>
         <input id="a-notes" placeholder="Which email it's under, last 4 digits, where the code lives&hellip;" spellcheck="false">
       </div>
+      <div id="crypto-fields" class="wide cryptorow" hidden>
+        <div>
+          <label for="a-chain">Chain</label>
+          <select id="a-chain">
+            <option value="">&mdash;</option>
+            <option>Solana</option>
+            <option>Ethereum</option>
+            <option>Polygon</option>
+            <option>Base</option>
+            <option>Bitcoin</option>
+            <option>other</option>
+          </select>
+        </div>
+        <div>
+          <label for="a-address">Address (public only)</label>
+          <input id="a-address" placeholder="0x&hellip; / bc1&hellip; / base58" spellcheck="false">
+        </div>
+        <div>
+          <label for="a-tokens">Tokens (qty SYM @ price)</label>
+          <input id="a-tokens" placeholder="2.5 SOL @ 145, 300 USDC @ 1" spellcheck="false">
+        </div>
+      </div>
       <p id="add-err" role="alert"></p>
     </form>
 
@@ -656,6 +682,27 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     const n = Number(t);
     return Number.isFinite(n) ? n : null;
   }
+  // Token-position parsing: "2.5 SOL @ 145, 300 USDC @ 1" ->
+  // { list:[{qty, sym, price}], total }. The @price is user-supplied — the app
+  // is offline and never guesses market prices. Entries without a price still
+  // parse (price null) but contribute $0 to the total. Nothing parseable -> null.
+  function parseTokens(s){
+    const src = String(s == null ? "" : s).trim();
+    if (!src) return null;
+    const list = [];
+    let total = 0;
+    src.split(",").forEach((part) => {
+      const m = part.trim().match(/^([\d.]+)\s+([A-Za-z][A-Za-z0-9]{1,11})(?:\s*@\s*\$?([\d.]+))?$/);
+      if (!m) return;
+      const qty = Number(m[1]);
+      if (!Number.isFinite(qty)) return;
+      const price = m[3] != null ? Number(m[3]) : null;
+      list.push({ qty, sym: m[2].toUpperCase(), price: Number.isFinite(price) ? price : null });
+      if (Number.isFinite(price)) total += qty * price;
+    });
+    return list.length ? { list, total } : null;
+  }
+
   // Compact terminal-style stamp for new log entries: "2026-07-12 13:21"
   function stamp(){
     const d = new Date(), p = (n) => String(n).padStart(2, "0");
@@ -678,7 +725,10 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     "gift card", "your gift card balance", "store credit", "merchandise credit",
     "reward certificate", "you've earned", "points expire", "expiring soon",
     "your refund", "refund processed", "promo code", "account balance",
-    "unclaimed", "e-gift", "prepaid card", "your order credit"
+    "unclaimed", "e-gift", "prepaid card", "your order credit",
+    // Crypto — dormant exchange accounts and wallets announce themselves too:
+    "airdrop", "staking rewards", "withdrawal confirmation",
+    "identity verification", "your crypto", "wallet backup"
   ];
 
   // Whole days from today (local midnight) until a YYYY-MM-DD expiry.
@@ -770,15 +820,19 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       headline: "Dormant exchange money is one identity re-verification away — then get it off the platform.",
       steps: [
         "Re-verify identity (KYC) first — dormant accounts usually demand it before any withdrawal.",
+        "Check the rewards/earn tab while you're in — staking payouts and referral bonuses pile up unnoticed.",
         "Sell to USD on the exchange and withdraw via ACH — usually free; wires cost more.",
-        "Mind withdrawal minimums and daily limits; large balances may take several days."
+        "Mind withdrawal minimums and daily limits; emptying a large balance can take several days."
       ]
     },
     "crypto-wallet": {
       headline: "For self-custody, access — not price — is the real risk. Secure access first.",
       steps: [
-        "Confirm you can still open the wallet, and note WHERE the recovery material is kept (record the location here, never the phrase itself).",
-        "Once access is confirmed, decide: hold, or consolidate small balances while fees are low."
+        "Confirm you can still open the wallet, and record WHERE the recovery material is kept (note the location here — never the phrase itself).",
+        "Lost access? Locate your recovery phrase and restore it into a fresh wallet app for that chain — the phrase IS the wallet; the old app is irrelevant.",
+        "Dust across chains? Swap small balances to USDC on a DEX while fees are low — Solana and Polygon cost cents, Ethereum mainnet can eat a small balance whole.",
+        "Bridging between chains means paying fees twice — for small amounts, swap and off-ramp on the chain the funds already live on.",
+        "Check airdrop eligibility for chains you've actually used — official project claim pages only; anyone DMing you about an airdrop is running a scam."
       ]
     },
     "reward-item": {
@@ -939,10 +993,12 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
    * Schema versioning — migrate() runs on every unlock so a vault
    * written by ANY older build opens cleanly instead of bricking.
    * ------------------------------------------------------------- */
-  const SCHEMA = 2;
+  const SCHEMA = 3;   // v3 adds chain / address / tokens (crypto accounts)
 
   // Normalize a decrypted vault of any prior shape to the current schema.
   // Also the NaN firewall: every account field is coerced to a safe value.
+  // The full-shape rebuild below IS the v2 -> v3 step: older accounts simply
+  // gain empty chain/address/tokens fields.
   function migrate(d){
     if (!d || typeof d !== "object" || Array.isArray(d)) d = {};
     const from = Number(d.schemaVersion) || 1;
@@ -954,12 +1010,15 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
         type:    TYPE_LABELS[a && a.type] ? a.type : "other",
         balance: Number.isFinite(bal) ? bal : 0,
         expires: (a && typeof a.expires === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.expires)) ? a.expires : null,
-        notes:   (a && a.notes != null) ? String(a.notes) : ""
+        notes:   (a && a.notes != null) ? String(a.notes) : "",
+        chain:   (a && a.chain != null) ? String(a.chain) : "",
+        address: (a && a.address != null) ? String(a.address) : "",
+        tokens:  (a && a.tokens != null) ? String(a.tokens) : ""
       };
     });
     d.log = Array.isArray(d.log) ? d.log.map(String) : [];
     d.schemaVersion = SCHEMA;
-    // Future field changes: add `if (from < 3){ ... }` steps here.
+    // Future field changes: add `if (from < 4){ ... }` steps here.
     return { data: d, migrated: from !== SCHEMA };
   }
 
@@ -1392,6 +1451,12 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       note.title = a.notes;
       row.appendChild(note);
     }
+    if (a && a.chain){
+      const ch = document.createElement("span");
+      ch.className = "tag";
+      ch.textContent = a.chain;
+      row.appendChild(ch);
+    }
     if (a && a.expires){
       // Expiry chip: EXPIRED (red) → "Nd left" countdown (amber, ≤30d) → date.
       const tag = document.createElement("span");
@@ -1447,13 +1512,32 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     const head = document.createElement("div");
     head.className = "rhead";
     head.textContent = r.headline;
+    box.appendChild(head);
+
+    // Crypto position line: chain · shortened public address · parsed tokens.
+    if (a && (a.chain || a.address || a.tokens)){
+      const pos = document.createElement("p");
+      pos.className = "rpos";
+      const addr = a.address
+        ? (a.address.length > 14 ? a.address.slice(0, 8) + "…" + a.address.slice(-4) : a.address)
+        : "";
+      const tk = parseTokens(a.tokens);
+      pos.textContent = [
+        a.chain && ("Chain: " + a.chain),
+        addr && ("addr " + addr),
+        tk && tk.list.map((t) =>
+          t.qty + " " + t.sym + (t.price !== null ? " @ " + usd(t.price) : "")).join(", ")
+      ].filter(Boolean).join(" · ");
+      box.appendChild(pos);
+    }
+
     const ol = document.createElement("ol");
     r.steps.forEach((s) => {
       const li = document.createElement("li");
       li.textContent = s;
       ol.appendChild(li);
     });
-    box.append(head, ol);
+    box.appendChild(ol);
     if (r.note){
       const note = document.createElement("p");
       note.className = "rnote";
@@ -1553,27 +1637,46 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     });
   }
 
+  // Crypto sub-fields only apply to the two crypto types; keep them hidden
+  // (and their values out of new accounts) for everything else.
+  function isCryptoType(t){ return t === "crypto-exchange" || t === "crypto-wallet"; }
+  function syncCryptoFields(){
+    $("crypto-fields").hidden = !isCryptoType($("a-type").value);
+  }
+
   async function addAccount(e){
     e.preventDefault();
     const err = $("add-err");
     err.textContent = "";
     const name = $("a-name").value.trim();
     if (!name){ err.textContent = "Give the account a name."; $("a-name").focus(); return; }
-    const balance = parseAmount($("a-balance").value);
+    let balance = parseAmount($("a-balance").value);
     if (balance === null){
       err.textContent = "Value must be a number like 43.50 — or leave it blank for $0.";
       $("a-balance").focus(); return;
     }
+    const type = $("a-type").value;
+    const crypto = isCryptoType(type);
+    const tokens = crypto ? $("a-tokens").value.trim() : "";
+    // Token positions are the source of truth for value: when they parse to a
+    // priced total, that total IS the balance — no double entry, no drift.
+    const tk = parseTokens(tokens);
+    const rolled = !!(tk && tk.total > 0);
+    if (rolled) balance = tk.total;
     DATA.accounts.push({
       name,
-      type: $("a-type").value,
+      type,
       balance,
       expires: $("a-expires").value || null,   // date input yields YYYY-MM-DD
-      notes: $("a-notes").value.trim()
+      notes: $("a-notes").value.trim(),
+      chain:   crypto ? $("a-chain").value : "",
+      address: crypto ? $("a-address").value.trim() : "",
+      tokens
     });
-    logEvent("Added “" + name + "” (" + usd(balance) + ")");
+    logEvent("Added “" + name + "” (" + usd(balance) + (rolled ? " from tokens)" : ")"));
     render();
     $("add-form").reset();
+    syncCryptoFields();                        // reset() changed the type select
     $("a-name").focus();
     try { await save(); } catch (e2){ /* banner shown by save(); data stays in memory */ }
   }
@@ -1600,7 +1703,8 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       if (expires && !/^\d{4}-\d{2}-\d{2}$/.test(expires)){
         errors.push("Line " + (i+1) + ": bad date “" + p[3] + "” — use YYYY-MM-DD or -"); return;
       }
-      added.push({ name, type, balance, expires, notes: p.slice(4).join(" | ") });
+      added.push({ name, type, balance, expires, notes: p.slice(4).join(" | "),
+                   chain:"", address:"", tokens:"" });
     });
 
     added.forEach((a) => DATA.accounts.push(a));
@@ -1713,6 +1817,8 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
     // Entry, bulk import, backup export / restore.
     $("add-form").addEventListener("submit", addAccount);
+    $("a-type").addEventListener("change", syncCryptoFields);
+    syncCryptoFields();
     $("bulk-btn").addEventListener("click", bulkImport);
     $("export-btn").addEventListener("click", exportBackup);
     $("restore-btn").addEventListener("click", () => $("restore-file").click());
