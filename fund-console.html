@@ -193,6 +193,22 @@
   .row .tag.warn{color:var(--warn);border-color:rgba(251,191,36,.35)}
   .row .tag.bad{color:var(--bad);border-color:rgba(248,113,113,.4)}
   .row .bal{flex:none;margin-left:auto;color:var(--txt);font-variant-numeric:tabular-nums}
+  .row .recover{
+    flex:none;width:auto;font-size:var(--fs-xs);padding:3px 9px;letter-spacing:.5px;
+    background:transparent;color:var(--dim);border-radius:12px;
+  }
+  .row .recover:hover,.row .recover[aria-expanded="true"]{color:var(--accent);border-color:var(--accent)}
+
+  /* Recovery route — expandable per-account info box under the row */
+  .route{
+    display:none;padding:2px 14px 14px 26px;
+    border-top:1px dashed var(--line);background:rgba(63,208,201,.02);
+  }
+  .route.open{display:block}
+  .route .rhead{font-size:var(--fs-m);color:var(--accent);margin:11px 0 7px;font-weight:600}
+  .route ol{margin:0;padding-left:18px;display:grid;gap:5px;font-size:var(--fs-m);color:var(--txt)}
+  .route li::marker{color:var(--accent)}
+  .route .rnote{margin:9px 0 0;font-size:var(--fs-s);color:var(--warn)}
 
   /* --- Empty states ---------------------------------------------- */
   .empty{
@@ -671,6 +687,100 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     },
     name: (a, b) => String(a && a.name || "").localeCompare(String(b && b.name || ""))
   };
+
+  /* ---------------------------------------------------------------
+   * Recovery decision engine — recommendRoute(account) returns the
+   * concrete next steps for getting this money back out, by type.
+   * All recovery is manual, by the owner, through official channels.
+   * ------------------------------------------------------------- */
+  const ROUTES = {
+    "store-credit": {
+      headline: "Convert store credit into something you'd actually use — it earns nothing sitting there.",
+      steps: [
+        "Verify the balance on the merchant's site (or by phone) before planning anything around it.",
+        "Spend it on things you already buy — treat it as cash at that store, not as bonus money.",
+        "If it came from a return, ask support to reissue it as a refund check or ACH to your bank — many merchants will if you ask directly.",
+        "Last resort: buy a high-demand gift card with the credit (where allowed) and sell that — expect a haircut on resale."
+      ]
+    },
+    "gift-card": {
+      headline: "Spend it, bank it, or sell it — decide by how likely you are to ever shop there.",
+      steps: [
+        "Check the balance first (issuer site, or the number on the back) — plenty of “empty” cards aren't.",
+        "Apple/iTunes cards: redeem into your Apple Account balance; add retail cards to Apple Wallet so they can never get lost in a drawer again.",
+        "Movie cards (AMC, Regal, Fandango): balances usually cover concessions too — burn them down before ticket prices climb.",
+        "Won't shop there? Sell it on a gift-card marketplace — expect an 8–20% haircut depending on brand demand.",
+        "Never sell a card to a stranger over P2P payment or for crypto — that is the classic gift-card scam shape."
+      ]
+    },
+    "credit-card": {
+      headline: "Redeem before devaluation — points only ever get cheaper.",
+      steps: [
+        "Statement credit or direct deposit is the zero-effort floor (usually 1¢/point).",
+        "Before settling, check transfer partners — travel transfers can beat 1¢/point; gift-card redemptions usually run below it.",
+        "Cashing out as a statement credit closes the loop: a posted credit can't devalue or expire.",
+        "Watch inactivity clauses — some programs quietly void points after 12–24 months without activity."
+      ]
+    },
+    "payment-app": {
+      headline: "App balances earn nothing and can be frozen — move them to your bank.",
+      steps: [
+        "Standard ACH transfer out is free (1–3 business days); instant transfer costs ~1.75% — urgency is the only reason to pay that.",
+        "Never top up an app balance from a credit card — issuers treat it as a cash advance: fee plus interest from day one.",
+        "Dormant account? Log in and move even $1 — activity resets the escheatment clock (states claim “abandoned” balances).",
+        "Locked out? Run the app's official recovery flow with your old phone number or email first — support won't act without it."
+      ]
+    },
+    "crypto-exchange": {
+      headline: "Dormant exchange money is one identity re-verification away — then get it off the platform.",
+      steps: [
+        "Re-verify identity (KYC) first — dormant accounts usually demand it before any withdrawal.",
+        "Sell to USD on the exchange and withdraw via ACH — usually free; wires cost more.",
+        "Mind withdrawal minimums and daily limits; large balances may take several days."
+      ]
+    },
+    "crypto-wallet": {
+      headline: "For self-custody, access — not price — is the real risk. Secure access first.",
+      steps: [
+        "Confirm you can still open the wallet, and note WHERE the recovery material is kept (record the location here, never the phrase itself).",
+        "Once access is confirmed, decide: hold, or consolidate small balances while fees are low."
+      ]
+    },
+    "reward-item": {
+      headline: "A physical reward is cash you haven't collected yet — claim it, then flip or keep it.",
+      steps: [
+        "Claim it before any claim-by date — unclaimed prizes simply evaporate.",
+        "Selling? Compare net proceeds across venues, not listing prices — fees and shipping change the winner.",
+        "Keep the box and accessories — sealed and complete both sell meaningfully higher."
+      ]
+    },
+    "other": {
+      headline: "Deposits, claims, and unclaimed property all have official recovery channels — work the paper trail.",
+      steps: [
+        "Search your state's unclaimed property database (free and official) for anything more than a couple of years old.",
+        "Deposits and escrow: a dated written request starts the clock — companies answer paper.",
+        "Class-action claims: file before the deadline; proof of purchase usually raises the payout."
+      ]
+    }
+  };
+
+  // Assemble the route for one account: canned steps for its type, plus
+  // urgency/balance context computed from the account itself.
+  function recommendRoute(a){
+    const base = ROUTES[a && a.type] || ROUTES.other;
+    const steps = base.steps.slice();
+    const d = daysLeft(a && a.expires);
+    let note = null;
+    if (d !== null && d < 0){
+      note = "Expired " + (-d) + "d ago — not always fatal: issuers and store managers often honor expired balances. Ask before writing it off.";
+    } else if (d !== null && d <= 14){
+      steps.unshift("⚠ Expires " + (d === 0 ? "TODAY" : "in " + d + "d") + " — do this first.");
+    }
+    if (!(Number(a && a.balance) > 0)){
+      note = (note ? note + " " : "") + "Value is $0/unknown — verify the real balance first and match effort to what it's worth.";
+    }
+    return { headline: base.headline, steps, note };
+  }
 
   // Ephemeral UI state — deliberately NOT part of DATA (never persisted).
   const UI = { filter:"", collapsed:new Set(), sort:"priority", expiryDismissed:false };
@@ -1155,7 +1265,49 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     bal.className = "bal";
     bal.textContent = usd(a && a.balance);
     row.appendChild(bal);
-    return row;
+
+    // Recover ▸ — expands the recommended route inline under the row.
+    // Pure DOM toggle: open/closed is not state, so render() stays simple.
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "recover";
+    btn.textContent = "Recover ▸";
+    btn.setAttribute("aria-expanded", "false");
+    row.appendChild(btn);
+
+    const box = document.createElement("div");
+    box.className = "route";
+    btn.addEventListener("click", () => {
+      const open = box.classList.toggle("open");
+      btn.setAttribute("aria-expanded", String(open));
+      btn.textContent = open ? "Recover ▾" : "Recover ▸";
+      if (open && !box.hasChildNodes()) renderRoute(box, a);   // build lazily, once
+    });
+
+    const wrap = document.createElement("div");
+    wrap.append(row, box);
+    return wrap;
+  }
+
+  // Fill a .route box with recommendRoute()'s output. textContent only.
+  function renderRoute(box, a){
+    const r = recommendRoute(a);
+    const head = document.createElement("div");
+    head.className = "rhead";
+    head.textContent = r.headline;
+    const ol = document.createElement("ol");
+    r.steps.forEach((s) => {
+      const li = document.createElement("li");
+      li.textContent = s;
+      ol.appendChild(li);
+    });
+    box.append(head, ol);
+    if (r.note){
+      const note = document.createElement("p");
+      note.className = "rnote";
+      note.textContent = r.note;
+      box.appendChild(note);
+    }
   }
 
   function emptyState(glyph, title, copy){
