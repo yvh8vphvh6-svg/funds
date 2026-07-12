@@ -1,0 +1,8 @@
+{
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "editor.tabSize": 2,
+  "files.associations": {
+    "fund-console.html": "html"
+  }
+}

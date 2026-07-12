@@ -37,9 +37,22 @@ There is nothing to install, build, or configure:
 3. On first run, set a vault passphrase. This creates your encrypted vault.
 4. On every later run, enter the same passphrase to unlock it.
 
-The app works **fully offline**. You can run it from a laptop with Wi-Fi disabled, from a USB stick, or from a folder that never leaves your machine. No `npm install`, no dev server, no CDN.
+The app works **fully offline**. You can run it from a laptop with Wi-Fi disabled, from a USB stick, or from a folder that never leaves your machine. No `npm install`, no dev server required, no CDN.
 
 > **Tip:** because the vault lives in `localStorage`, it is tied to the browser *and* to how the file is opened (the `file://` path acts as the origin). Always open the file from the same location with the same browser, and use the export feature for backups before moving anything.
+
+### Local development (optional)
+
+`serve.mjs` is a zero-dependency dev server (Node 18+) for working on the console itself:
+
+```bash
+node serve.mjs   # → http://127.0.0.1:4173
+```
+
+- **Localhost only** — it binds `127.0.0.1`, never a LAN interface, so the dev loop can't be reached from another machine.
+- **Auto-reload** — it watches `fund-console.html` and refreshes open tabs on save. The reload client is *injected at serve time*; the file on disk keeps its hardened CSP (`connect-src 'none'`), so the shipped app remains incapable of making any network request.
+- **Origin indicator** — the header chip shows where the page is running: `file://` (normal use), `127.0.0.1:4173 · dev` (dev server, live reload active), or a loud ⚠ warning for any other origin, which the console is not meant to run from.
+- **VS Code** — `Terminal → Run Build Task` starts the server (`.vscode/tasks.json`); shared editor settings and extension recommendations live alongside it in `.vscode/`.
 
 ## Features
 

@@ -84,6 +84,8 @@
   }
   .chip b{font-weight:600;color:var(--txt);font-variant-numeric:tabular-nums}
   .chip.total b{color:var(--accent)}
+  .chip.origin-dev{color:var(--accent);border-color:#1c3b3a}
+  .chip.origin-warn{color:var(--warn);border-color:rgba(251,191,36,.4)}
 
   /* Lock-state indicator (top-right) */
   .lockstate{
@@ -487,6 +489,7 @@
       <span class="chip"><b id="chip-count">0</b> accounts</span>
       <span class="chip total"><b id="chip-total">$0.00</b> open</span>
     </span>
+    <span id="origin-chip" class="chip"></span>
     <span id="lockstate" class="lockstate"><span class="dot"></span><span class="txt">Locked</span></span>
     <button id="lock-btn" class="ghost" style="display:none">Lock</button>
   </div>
@@ -1930,10 +1933,32 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     location.reload();
   }
 
+  // Origin indicator — the vault's promise is "local only", so the header says
+  // where the page is actually running: file://, the localhost dev server, or
+  // (loudly) anything else.
+  function setOriginChip(){
+    const chip = $("origin-chip");
+    if (!chip) return;
+    const local = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    if (location.protocol === "file:"){
+      chip.textContent = "file://";
+      chip.title = "Opened directly from disk — fully offline";
+    } else if (local){
+      chip.textContent = location.host + " · dev";
+      chip.classList.add("origin-dev");
+      chip.title = "Served by the local dev server (serve.mjs) — localhost only, with live reload";
+    } else {
+      chip.textContent = "⚠ " + (location.host || location.protocol);
+      chip.classList.add("origin-warn");
+      chip.title = "Unexpected origin — this console is meant to run from file:// or localhost only";
+    }
+  }
+
   /* ---------------------------------------------------------------
    * Boot / event wiring
    * ------------------------------------------------------------- */
   function boot(){
+    setOriginChip();
     // No WebCrypto → the whole security model is impossible. Fail loud.
     if (!(window.crypto && crypto.subtle)){
       setGateBanner("This browser has no WebCrypto (crypto.subtle). Open the file over file:// or https:// in a modern browser.");
