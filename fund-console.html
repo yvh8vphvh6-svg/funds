@@ -153,6 +153,7 @@
 
   /* --- Accounts: type groups + rows ------------------------------ */
   #filter{width:230px;max-width:100%;padding:7px 11px;font-size:var(--fs-m)}
+  #sort{width:auto;padding:7px 11px;font-size:var(--fs-m)}
   #accounts{display:grid;gap:var(--sp-2)}
 
   .group{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel2);overflow:hidden}
@@ -190,6 +191,7 @@
     font-variant-numeric:tabular-nums;
   }
   .row .tag.warn{color:var(--warn);border-color:rgba(251,191,36,.35)}
+  .row .tag.bad{color:var(--bad);border-color:rgba(248,113,113,.4)}
   .row .bal{flex:none;margin-left:auto;color:var(--txt);font-variant-numeric:tabular-nums}
 
   /* --- Empty states ---------------------------------------------- */
@@ -360,6 +362,21 @@
   }
   #app-banner.show{display:block}
 
+  /* Amber urgency banner — shown while any account expires within 14 days. */
+  #expiry-banner{
+    display:none;
+    background:#241c0c;border:1px solid rgba(251,191,36,.5);color:var(--warn);
+    padding:11px 14px;border-radius:var(--radius);font-size:13px;line-height:1.5;
+    align-items:baseline;gap:var(--sp-3);
+  }
+  #expiry-banner.show{display:flex}
+  #expiry-banner .msg{flex:1;min-width:0}
+  #expiry-banner button{
+    flex:none;width:auto;font-size:var(--fs-s);padding:3px 10px;
+    background:transparent;border-color:rgba(251,191,36,.45);color:var(--warn);
+  }
+  #expiry-banner button:hover{border-color:var(--warn);color:var(--warn)}
+
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-thumb{background:#1c2838;border-radius:6px}
   ::-webkit-scrollbar-track{background:transparent}
@@ -422,6 +439,9 @@
   <!-- Loud error banner (e.g. a save that could not be persisted). Hidden until needed. -->
   <div id="app-banner"></div>
 
+  <!-- Urgency banner — accounts whose balance dies within 14 days. -->
+  <div id="expiry-banner" role="status"></div>
+
   <!-- Status / summary strip -->
   <section class="panel">
     <h2>Vault status</h2>
@@ -439,6 +459,12 @@
       <h2>Accounts</h2>
       <input id="filter" type="search" placeholder="Filter accounts&hellip;"
              autocomplete="off" spellcheck="false" aria-label="Filter accounts by name, note, or type">
+      <select id="sort" aria-label="Sort accounts">
+        <option value="priority">Sort: priority</option>
+        <option value="value">Sort: value</option>
+        <option value="expiration">Sort: expiration</option>
+        <option value="name">Sort: name</option>
+      </select>
       <button id="export-btn" class="ghost" type="button">Export backup</button>
     </div>
 
@@ -604,8 +630,50 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     "unclaimed", "e-gift", "prepaid card", "your order credit"
   ];
 
+  // Whole days from today (local midnight) until a YYYY-MM-DD expiry.
+  // Negative = already expired; null = no usable date.
+  function daysLeft(expires){
+    if (!expires) return null;
+    const d = new Date(expires + "T00:00:00");
+    if (isNaN(d)) return null;
+    const today = new Date(); today.setHours(0,0,0,0);
+    return Math.round((d - today) / 86400000);
+  }
+
+  // Priority score = value × urgency. Urgency climbs as the expiry closes in
+  // (an expiring balance is money actively evaporating); already-expired
+  // accounts sink low (salvage attempts, not fire drills); no expiry = 1.
+  // The +1 keeps a $0 account with a near expiry above a $0 account with none.
+  function priority(a){
+    const bal = Number(a && a.balance) || 0;
+    const d = daysLeft(a && a.expires);
+    let urgency = 1;
+    if (d !== null){
+      if (d < 0)       urgency = 0.25;
+      else if (d <= 7) urgency = 3;
+      else if (d <= 14) urgency = 2.5;
+      else if (d <= 30) urgency = 2;
+      else if (d <= 90) urgency = 1.5;
+    }
+    return (bal + 1) * urgency;
+  }
+
+  // Within-group sort orders. "priority" is the default: act-now items first.
+  const SORTERS = {
+    priority:   (a, b) => priority(b) - priority(a),
+    value:      (a, b) => (Number(b && b.balance) || 0) - (Number(a && a.balance) || 0),
+    expiration: (a, b) => {
+      const da = daysLeft(a && a.expires), db = daysLeft(b && b.expires);
+      if (da === null && db === null) return 0;
+      if (da === null) return 1;                 // dateless accounts sink
+      if (db === null) return -1;
+      return da - db;
+    },
+    name: (a, b) => String(a && a.name || "").localeCompare(String(b && b.name || ""))
+  };
+
   // Ephemeral UI state — deliberately NOT part of DATA (never persisted).
-  const UI = { filter:"", collapsed:new Set() };
+  const UI = { filter:"", collapsed:new Set(), sort:"priority", expiryDismissed:false };
 
   /* ---------------------------------------------------------------
    * Schema versioning — migrate() runs on every unlock so a vault
@@ -892,6 +960,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     $("stat-count").textContent = String(accounts.length);
     $("stat-total").textContent = usd(total);
     renderNextExpiration(accounts);
+    renderExpiryBanner(accounts);
     $("stat-last").textContent  = DATA.log[0] ? DATA.log[0].split("  —  ")[0] : "—";
 
     // --- Header chips + footer + status line ---
@@ -915,24 +984,57 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
   // Soonest future expiration across all accounts; warn tint when <90 days out.
   function renderNextExpiration(accounts){
     const el = $("stat-exp");
-    const today = new Date(); today.setHours(0,0,0,0);
-    let next = null;
+    let next = null, nextDays = null;
     accounts.forEach((a) => {
       if (!a || !a.expires) return;
-      const d = new Date(a.expires + "T00:00:00");
-      if (!isNaN(d) && d >= today && (!next || d < next)) next = d;
+      const d = daysLeft(a.expires);
+      if (d === null || d < 0) return;
+      if (nextDays === null || d < nextDays){ nextDays = d; next = a.expires; }
     });
     el.classList.remove("accent");
     el.style.color = "";
-    if (!next){ el.textContent = "—"; return; }
-    const days = Math.round((next - today) / 86400000);
+    if (next === null){ el.textContent = "—"; return; }
     el.textContent = "";
-    el.appendChild(document.createTextNode(next.toISOString().slice(0,10)));
+    el.appendChild(document.createTextNode(next));
     const unit = document.createElement("span");
     unit.className = "unit";
-    unit.textContent = "in " + days + "d";
+    unit.textContent = "in " + nextDays + "d";
     el.appendChild(unit);
-    if (days <= 90) el.style.color = "var(--warn)";
+    if (nextDays <= 90) el.style.color = "var(--warn)";
+  }
+
+  // ≤14-day urgency banner: money about to evaporate gets one loud line.
+  // Dismissable per session; reappears on the next unlock while relevant.
+  function renderExpiryBanner(accounts){
+    const b = $("expiry-banner");
+    if (!b) return;
+    const expiring = accounts
+      .map((a) => ({ a, d: daysLeft(a && a.expires) }))
+      .filter((x) => x.d !== null && x.d >= 0 && x.d <= 14)
+      .sort((x, y) => x.d - y.d);
+    if (!expiring.length || UI.expiryDismissed){
+      b.classList.remove("show");
+      b.textContent = "";
+      return;
+    }
+    const soonest = expiring[0];
+    const atStake = expiring.reduce((s, x) => s + (Number(x.a.balance) || 0), 0);
+    b.textContent = "";
+    const msg = document.createElement("span");
+    msg.className = "msg";
+    msg.textContent = "◆ " + plural(expiring.length, "account") +
+      " expiring within 14 days (" + usd(atStake) + " at stake) — soonest: " +
+      ((soonest.a && soonest.a.name) || "(unnamed)") +
+      (soonest.d === 0 ? ", today." : ", " + soonest.d + "d left.");
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.textContent = "Dismiss";
+    dismiss.addEventListener("click", () => {
+      UI.expiryDismissed = true;
+      renderExpiryBanner(DATA.accounts);
+    });
+    b.append(msg, dismiss);
+    b.classList.add("show");
   }
 
   // Accounts grouped by type, filterable, with collapsible group headers.
@@ -977,6 +1079,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
     TYPE_ORDER.filter(t => buckets.has(t)).forEach((t) => {
       const list = buckets.get(t);
+      list.sort(SORTERS[UI.sort] || SORTERS.priority);
       const sum = list.reduce((s,a) => s + (Number(a && a.balance) || 0), 0);
 
       const group = document.createElement("section");
@@ -1028,11 +1131,24 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       row.appendChild(note);
     }
     if (a && a.expires){
+      // Expiry chip: EXPIRED (red) → "Nd left" countdown (amber, ≤30d) → date.
       const tag = document.createElement("span");
       tag.className = "tag";
-      tag.textContent = "exp " + a.expires;
-      const days = (new Date(a.expires + "T00:00:00") - new Date()) / 86400000;
-      if (!isNaN(days) && days <= 90) tag.classList.add("warn");
+      tag.title = "expires " + a.expires;
+      const d = daysLeft(a.expires);
+      if (d !== null && d < 0){
+        tag.textContent = "EXPIRED";
+        tag.classList.add("bad");
+      } else if (d === 0){
+        tag.textContent = "expires today";
+        tag.classList.add("bad");
+      } else if (d !== null && d <= 30){
+        tag.textContent = d + "d left";
+        tag.classList.add("warn");
+      } else {
+        tag.textContent = "exp " + a.expires;
+        if (d !== null && d <= 90) tag.classList.add("warn");
+      }
       row.appendChild(tag);
     }
     const bal = document.createElement("span");
@@ -1284,7 +1400,8 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     $("pass").addEventListener("keydown",  (e) => { if (e.key === "Enter") unlock(); });
     $("pass2").addEventListener("keydown", (e) => { if (e.key === "Enter") unlock(); });
 
-    // Accounts filter: live re-render on input, Esc clears.
+    // Accounts filter: live re-render on input, Esc clears. Sort re-renders too.
+    $("sort").addEventListener("change", (e) => { UI.sort = e.target.value; render(); });
     $("filter").addEventListener("input", (e) => { UI.filter = e.target.value.trim(); render(); });
     $("filter").addEventListener("keydown", (e) => {
       if (e.key === "Escape"){ e.target.value = ""; UI.filter = ""; render(); }
