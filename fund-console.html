@@ -220,6 +220,40 @@
     font-size:var(--fs-s);color:var(--dim);padding:2px 4px;flex-wrap:wrap;
   }
 
+  /* --- Add account + bulk import --------------------------------- */
+  .addbox{
+    display:grid;gap:var(--sp-3);
+    grid-template-columns:2fr 1.2fr .9fr 1fr auto;
+    border:1px solid var(--line);border-radius:var(--radius);
+    background:var(--panel2);padding:var(--sp-4);margin-bottom:var(--sp-2);
+  }
+  .addbox .wide{grid-column:1/-1}
+  .addbox button{align-self:end}
+  #add-err{margin:0;grid-column:1/-1;font-size:var(--fs-m);color:var(--bad);min-height:0}
+  #add-err:empty{display:none}
+
+  #bulk{margin-bottom:var(--sp-2);border:1px solid var(--line);border-radius:var(--radius);background:var(--panel2)}
+  #bulk summary{
+    list-style:none;cursor:pointer;padding:10px 14px;
+    font-size:var(--fs-s);letter-spacing:1px;text-transform:uppercase;color:var(--dim);
+    transition:background .15s var(--ease),color .15s var(--ease);
+  }
+  #bulk summary::-webkit-details-marker{display:none}
+  #bulk summary::before{content:"▸ ";color:var(--accent)}
+  #bulk[open] summary::before{content:"▾ "}
+  #bulk summary:hover{background:var(--accent-soft);color:var(--txt)}
+  #bulk summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  #bulk .bulkin{padding:0 14px 14px;display:grid;gap:var(--sp-3)}
+  #bulk textarea{min-height:110px;resize:vertical;font-size:var(--fs-m);line-height:1.7}
+  #bulk .bulkrow{display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap}
+  #bulk-report{display:grid;gap:2px;font-size:var(--fs-m)}
+  #bulk-report .ok{color:var(--accent)}
+  #bulk-report .err{color:var(--bad)}
+
+  /* Gate: success-tinted banner (restore) + restore control */
+  #gate .banner.ok{background:#0f201e;border-color:#1c3b3a;color:var(--accent)}
+  #restore-btn{width:100%;margin-top:var(--sp-3);font-size:var(--fs-m)}
+
   /* --- Status line (signature): fixed tmux-style totals bar ------ */
   #totalsbar{
     position:fixed;left:0;right:0;bottom:0;z-index:50;
@@ -267,6 +301,8 @@
     main{padding:var(--sp-4)}
     .stat .v{font-size:17px;min-height:23px}
     #totalsbar{padding:8px var(--sp-4)}
+    .addbox{grid-template-columns:1fr 1fr}
+    .addbox button{grid-column:1/-1;align-self:auto}
   }
   @media (max-width:520px){
     .row .note{display:none}
@@ -350,6 +386,9 @@
       AES-256-GCM encrypted in this browser only. Nothing is ever sent anywhere.
       <br><strong>Lost passphrase = lost data.</strong> There is no reset and no backdoor.
     </p>
+
+    <button id="restore-btn" class="ghost" type="button">Restore from backup file&hellip;</button>
+    <input id="restore-file" type="file" accept=".json,application/json" hidden>
   </div>
 </div>
 
@@ -383,13 +422,56 @@
     </div>
   </section>
 
-  <!-- Accounts — grouped by type; the entry console will be built here later. -->
+  <!-- Accounts — entry form, bulk import, grouped list -->
   <section class="panel">
     <div class="panel-head">
       <h2>Accounts</h2>
       <input id="filter" type="search" placeholder="Filter accounts&hellip;"
              autocomplete="off" spellcheck="false" aria-label="Filter accounts by name, note, or type">
+      <button id="export-btn" class="ghost" type="button">Export backup</button>
     </div>
+
+    <form id="add-form" class="addbox" autocomplete="off" novalidate>
+      <div>
+        <label for="a-name">Name</label>
+        <input id="a-name" placeholder="Steam gift card" spellcheck="false">
+      </div>
+      <div>
+        <label for="a-type">Type</label>
+        <select id="a-type"></select>
+      </div>
+      <div>
+        <label for="a-balance">Value (USD)</label>
+        <input id="a-balance" inputmode="decimal" placeholder="0.00">
+      </div>
+      <div>
+        <label for="a-expires">Expires</label>
+        <input id="a-expires" type="date">
+      </div>
+      <button class="primary" type="submit">Add account</button>
+      <div class="wide">
+        <label for="a-notes">Notes</label>
+        <input id="a-notes" placeholder="Which email it's under, last 4 digits, where the code lives&hellip;" spellcheck="false">
+      </div>
+      <p id="add-err" role="alert"></p>
+    </form>
+
+    <details id="bulk">
+      <summary>Bulk import</summary>
+      <div class="bulkin">
+        <textarea id="bulk-text" spellcheck="false"
+placeholder="One account per line, pipe-delimited:
+name | type | balance | expires (YYYY-MM-DD or -) | notes
+
+Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
+        <div class="bulkrow">
+          <button id="bulk-btn" type="button">Import lines</button>
+          <span class="muted">Types: store-credit, credit-card, payment-app, gift-card, crypto-exchange, crypto-wallet, reward-item, other</span>
+        </div>
+        <div id="bulk-report"></div>
+      </div>
+    </details>
+
     <div id="accounts"></div>
   </section>
 
@@ -454,9 +536,26 @@
    * ------------------------------------------------------------- */
   const $ = (id) => document.getElementById(id);
 
+  // HTML escaping. Rendering policy: user-supplied strings ONLY ever reach the
+  // DOM via textContent/createTextNode (see renderAccounts/renderLog/bulk report),
+  // which cannot execute markup. esc() is the mandatory gate for any FUTURE code
+  // that interpolates into innerHTML — there is deliberately no innerHTML today.
+  const esc = (s) => String(s).replace(/[&<>"']/g,
+    (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+
   // Currency + timestamp formatting (Intl throughout; one instance each).
+  // usd() never emits NaN: any non-finite input renders as $0.00.
   const fmtUSD = new Intl.NumberFormat("en-US", { style:"currency", currency:"USD" });
-  const usd = (n) => fmtUSD.format(Number(n) || 0);
+  const usd = (n) => { const v = Number(n); return fmtUSD.format(Number.isFinite(v) ? v : 0); };
+
+  // Money-input parsing: strips $ , and spaces. "" -> 0; garbage -> null (reject),
+  // so an invalid amount can never be stored and no NaN ever reaches the vault.
+  function parseAmount(s){
+    const t = String(s == null ? "" : s).trim().replace(/[$,\s]/g, "");
+    if (t === "") return 0;
+    const n = Number(t);
+    return Number.isFinite(n) ? n : null;
+  }
   // Compact terminal-style stamp for new log entries: "2026-07-12 13:21"
   function stamp(){
     const d = new Date(), p = (n) => String(n).padStart(2, "0");
@@ -475,6 +574,34 @@
 
   // Ephemeral UI state — deliberately NOT part of DATA (never persisted).
   const UI = { filter:"", collapsed:new Set() };
+
+  /* ---------------------------------------------------------------
+   * Schema versioning — migrate() runs on every unlock so a vault
+   * written by ANY older build opens cleanly instead of bricking.
+   * ------------------------------------------------------------- */
+  const SCHEMA = 2;
+
+  // Normalize a decrypted vault of any prior shape to the current schema.
+  // Also the NaN firewall: every account field is coerced to a safe value.
+  function migrate(d){
+    if (!d || typeof d !== "object" || Array.isArray(d)) d = {};
+    const from = Number(d.schemaVersion) || 1;
+    const accounts = Array.isArray(d.accounts) ? d.accounts : [];
+    d.accounts = accounts.map((a) => {
+      const bal = Number(a && a.balance);
+      return {
+        name:    (a && a.name != null && String(a.name).trim() !== "") ? String(a.name) : "(unnamed)",
+        type:    TYPE_LABELS[a && a.type] ? a.type : "other",
+        balance: Number.isFinite(bal) ? bal : 0,
+        expires: (a && typeof a.expires === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.expires)) ? a.expires : null,
+        notes:   (a && a.notes != null) ? String(a.notes) : ""
+      };
+    });
+    d.log = Array.isArray(d.log) ? d.log.map(String) : [];
+    d.schemaVersion = SCHEMA;
+    // Future field changes: add `if (from < 3){ ... }` steps here.
+    return { data: d, migrated: from !== SCHEMA };
+  }
 
   // localStorage can throw (private mode, file:// restrictions). Wrap it.
   function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
@@ -532,9 +659,9 @@
       iv: bytesToB64(iv),
       ct: bytesToB64(new Uint8Array(ct))
     };
-    if (!lsSet(VAULT_KEY, JSON.stringify(blob))){
-      throw new Error("localStorage rejected the write (storage full, blocked, or private mode).");
-    }
+    // Write directly (not via lsSet) so the ORIGINAL exception propagates —
+    // save() inspects it to tell quota exhaustion apart from other failures.
+    localStorage.setItem(VAULT_KEY, JSON.stringify(blob));
   }
 
   // Decrypt a PARSED blob with KEY. Throws on wrong passphrase or tampering
@@ -558,7 +685,10 @@
       await encryptAndStore();
       clearAppBanner();
     } catch (err){
-      showAppBanner("Vault NOT saved — " + (err && err.message ? err.message : "storage write failed") +
+      const why = (err && /quota/i.test(err.name + " " + err.message))
+        ? "browser storage is full — free up site storage or export a backup now."
+        : (err && err.message ? err.message : "storage write failed.");
+      showAppBanner("Vault NOT saved — " + why +
                     " Your latest changes exist only in this tab and will be lost if you reload or close it.");
       throw err;
     }
@@ -609,10 +739,10 @@
             salt = b64ToBytes(ls); iters = LEGACY_ITERS; legacy = true;
           }
           KEY  = await deriveKey(passphrase, salt, iters);
-          DATA = await decryptVault(blob);              // throws on wrong pass / tamper
-          if (!DATA || typeof DATA !== "object") throw new Error("bad vault shape");
-          if (!Array.isArray(DATA.accounts)) DATA.accounts = [];
-          if (!Array.isArray(DATA.log)) DATA.log = [];
+          const decrypted = await decryptVault(blob);   // throws on wrong pass / tamper
+          const m = migrate(decrypted);                 // old shapes open, never brick
+          DATA = m.data;
+          if (m.migrated) logEvent("Vault schema normalized to v" + SCHEMA);
 
           if (legacy){
             // #2 — upgrade v1 -> v2: re-key at current strength, then the next
@@ -630,7 +760,7 @@
           activeSalt  = crypto.getRandomValues(new Uint8Array(16));
           activeIters = PBKDF2_ITERS;
           KEY  = await deriveKey(passphrase, activeSalt, activeIters);
-          DATA = { accounts: [], log: [] };
+          DATA = { schemaVersion: SCHEMA, accounts: [], log: [] };
           logEvent("Vault created");
         }
       } catch (err){
@@ -692,12 +822,33 @@
     b.textContent = "";
   }
 
-  // Gate-level message (passphrase mismatch, missing WebCrypto, …).
-  function setGateBanner(msg){
+  // Gate-level message (passphrase mismatch, restore results, missing WebCrypto).
+  function setGateBanner(msg, ok){
     const b = $("gate-banner");
     if (!b) return;
     b.textContent = msg;
+    b.classList.toggle("ok", !!ok);
     b.style.display = msg ? "block" : "none";
+  }
+
+  // First-run vs returning gate: confirm field only when creating, and the
+  // button says what it does. Re-run after anything that changes storage
+  // (e.g. a successful restore) so the gate never lies about its mode.
+  function setGateMode(){
+    const hasVault = !!lsGet(VAULT_KEY);
+    const hint = $("gate-hint");
+    $("pass2-label").style.display = hasVault ? "none" : "";
+    $("pass2").style.display = hasVault ? "none" : "";
+    hint.classList.toggle("new", !hasVault);
+    if (hasVault){
+      hint.textContent = "Enter your passphrase to unlock the vault.";
+      $("pass").setAttribute("placeholder", "Unlocks your vault");
+      $("unlock-btn").textContent = "Unlock";
+    } else {
+      hint.textContent = "No vault found on this browser — set a passphrase to create one.";
+      $("pass").setAttribute("placeholder", "Choose a master passphrase");
+      $("unlock-btn").textContent = "Create vault";
+    }
   }
 
   function render(){
@@ -902,6 +1053,146 @@
   }
 
   /* ---------------------------------------------------------------
+   * Account entry, bulk import, backup export / restore
+   * ------------------------------------------------------------- */
+  function populateTypeSelect(){
+    const sel = $("a-type");
+    TYPE_ORDER.forEach((t) => {
+      const o = document.createElement("option");
+      o.value = t; o.textContent = TYPE_LABELS[t];
+      sel.appendChild(o);
+    });
+  }
+
+  async function addAccount(e){
+    e.preventDefault();
+    const err = $("add-err");
+    err.textContent = "";
+    const name = $("a-name").value.trim();
+    if (!name){ err.textContent = "Give the account a name."; $("a-name").focus(); return; }
+    const balance = parseAmount($("a-balance").value);
+    if (balance === null){
+      err.textContent = "Value must be a number like 43.50 — or leave it blank for $0.";
+      $("a-balance").focus(); return;
+    }
+    DATA.accounts.push({
+      name,
+      type: $("a-type").value,
+      balance,
+      expires: $("a-expires").value || null,   // date input yields YYYY-MM-DD
+      notes: $("a-notes").value.trim()
+    });
+    logEvent("Added “" + name + "” (" + usd(balance) + ")");
+    render();
+    $("add-form").reset();
+    $("a-name").focus();
+    try { await save(); } catch (e2){ /* banner shown by save(); data stays in memory */ }
+  }
+
+  // Pipe-delimited lines: name | type | balance | expires | notes.
+  // Bad lines are reported back with the line number and reason — never
+  // silently dropped, never partially parsed into the vault.
+  async function bulkImport(){
+    const report = $("bulk-report");
+    report.textContent = "";
+    const lines = $("bulk-text").value.split("\n");
+    const added = [], errors = [];
+    lines.forEach((raw, i) => {
+      const line = raw.trim();
+      if (!line) return;
+      const p = line.split("|").map((s) => s.trim());
+      if (p.length < 3){ errors.push("Line " + (i+1) + ": expected name | type | balance | expires | notes"); return; }
+      const name = p[0], type = p[1];
+      if (!name){ errors.push("Line " + (i+1) + ": missing name"); return; }
+      if (!TYPE_LABELS[type]){ errors.push("Line " + (i+1) + ": unknown type “" + type + "”"); return; }
+      const balance = parseAmount(p[2]);
+      if (balance === null){ errors.push("Line " + (i+1) + ": bad balance “" + p[2] + "”"); return; }
+      let expires = (p[3] && p[3] !== "-") ? p[3] : null;
+      if (expires && !/^\d{4}-\d{2}-\d{2}$/.test(expires)){
+        errors.push("Line " + (i+1) + ": bad date “" + p[3] + "” — use YYYY-MM-DD or -"); return;
+      }
+      added.push({ name, type, balance, expires, notes: p.slice(4).join(" | ") });
+    });
+
+    added.forEach((a) => DATA.accounts.push(a));
+    const summary = document.createElement("div");
+    summary.className = added.length ? "ok" : "err";
+    summary.textContent = added.length + " added · " + errors.length + " rejected";
+    report.appendChild(summary);
+    errors.forEach((msg) => {
+      const d = document.createElement("div");
+      d.className = "err";
+      d.textContent = msg;                    // rejected input rendered inert
+      report.appendChild(d);
+    });
+
+    if (added.length){
+      logEvent("Bulk import: " + plural(added.length, "account") + " added" +
+               (errors.length ? ", " + errors.length + " rejected" : ""));
+      $("bulk-text").value = "";
+      render();
+      try { await save(); } catch (e){ /* banner shown by save() */ }
+    }
+  }
+
+  // Export = the encrypted blob exactly as stored (self-describing: kdf params
+  // travel inside it), wrapped with a marker. Nothing decrypted, nothing leaks.
+  function exportBackup(){
+    const raw = lsGet(VAULT_KEY);
+    if (!raw){ showAppBanner("Nothing to export — the vault has never been saved."); return; }
+    let vault;
+    try { vault = JSON.parse(raw); }
+    catch (e){ showAppBanner("Export failed — the stored vault is not readable JSON."); return; }
+    const payload = JSON.stringify({ frcBackup: 1, exportedAt: stamp(), vault }, null, 2);
+    const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "frc-vault-backup-" + stamp().slice(0, 10) + ".json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    logEvent("Exported encrypted backup");
+    render();
+    save().catch(() => {});                   // failure already surfaced by save()
+  }
+
+  // Restore from the gate (works with no vault present — the disaster case).
+  // Validates shape before touching storage; never overwrites without consent.
+  function restoreBackup(file){
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onerror = () => setGateBanner("Could not read that file.", false);
+    reader.onload = () => {
+      let vault = null;
+      try {
+        const obj = JSON.parse(String(reader.result));
+        vault = (obj && obj.frcBackup && obj.vault) ? obj.vault : obj;   // raw blob accepted too
+      } catch (e){ setGateBanner("Not a valid backup — the file is not JSON.", false); return; }
+      const looksV2 = vault && typeof vault.iv === "string" && typeof vault.ct === "string" &&
+                      vault.kdf && typeof vault.kdf.salt === "string";
+      const looksV1 = vault && typeof vault.iv === "string" && typeof vault.ct === "string" && !vault.kdf;
+      if (!looksV2 && !looksV1){
+        setGateBanner("Not a valid backup — no encrypted vault found in the file.", false); return;
+      }
+      if (looksV1 && !lsGet(SALT_KEY)){
+        setGateBanner("Old-format backup: it needs the separate salt from its original browser. Unlock it there once (it upgrades itself), then export again.", false);
+        return;
+      }
+      if (lsGet(VAULT_KEY) &&
+          !confirm("A vault already exists in this browser. Replace it with the backup? The current vault will be overwritten.")) return;
+      if (!lsSet(VAULT_KEY, JSON.stringify(vault))){
+        setGateBanner("Restore failed — the browser refused the storage write (storage may be full).", false);
+        return;
+      }
+      setGateMode();
+      setGateBanner("Backup restored. Enter the backup's passphrase to unlock.", true);
+      $("pass").focus();
+    };
+    reader.readAsText(file);
+  }
+
+  /* ---------------------------------------------------------------
    * Boot / event wiring
    * ------------------------------------------------------------- */
   function boot(){
@@ -914,20 +1205,8 @@
       return;
     }
 
-    // First-run vs returning-vault: returning users unlock; first-run users must
-    // confirm the passphrase (#5) before a vault is created. The button says
-    // what it does: "Create vault" on first run, "Unlock" after.
-    const hint = $("gate-hint");
-    if (lsGet(VAULT_KEY)){
-      hint.textContent = "Enter your passphrase to unlock the vault.";
-    } else {
-      hint.textContent = "No vault found on this browser — set a passphrase to create one.";
-      hint.classList.add("new");
-      $("pass2-label").style.display = "";
-      $("pass2").style.display = "";
-      $("pass").setAttribute("placeholder", "Choose a master passphrase");
-      $("unlock-btn").textContent = "Create vault";
-    }
+    populateTypeSelect();
+    setGateMode();
 
     // Wire controls. Enter in either field triggers unlock.
     $("unlock-btn").addEventListener("click", unlock);
@@ -939,6 +1218,16 @@
     $("filter").addEventListener("input", (e) => { UI.filter = e.target.value.trim(); render(); });
     $("filter").addEventListener("keydown", (e) => {
       if (e.key === "Escape"){ e.target.value = ""; UI.filter = ""; render(); }
+    });
+
+    // Entry, bulk import, backup export / restore.
+    $("add-form").addEventListener("submit", addAccount);
+    $("bulk-btn").addEventListener("click", bulkImport);
+    $("export-btn").addEventListener("click", exportBackup);
+    $("restore-btn").addEventListener("click", () => $("restore-file").click());
+    $("restore-file").addEventListener("change", (e) => {
+      restoreBackup(e.target.files && e.target.files[0]);
+      e.target.value = "";                    // allow re-picking the same file
     });
 
     $("pass").focus();
