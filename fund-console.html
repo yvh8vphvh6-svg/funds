@@ -33,6 +33,7 @@
     --warn:#fbbf24;
     --bad:#f87171;
     --info:#60a5fa;
+    --gold:#e0b341;      /* flip desk advice */
     --radius:8px;
     /* Spacing scale — every gap/pad in the app sits on this 4px grid */
     --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px;
@@ -278,6 +279,32 @@
   .term:hover{border-color:var(--accent);color:var(--accent)}
   .term.copied{border-color:var(--good);color:var(--good)}
   #terms-hint{min-height:18px;margin:0}
+
+  /* --- Flip desk: venue comparison + gold advice box -------------- */
+  .advice{
+    border:1px solid rgba(224,179,65,.5);background:rgba(224,179,65,.06);
+    border-radius:var(--radius);padding:12px 14px;margin-bottom:var(--sp-4);
+    font-size:var(--fs-b);color:var(--gold);line-height:1.5;
+  }
+  #flip-list{display:grid;gap:var(--sp-2)}
+  #flip-list .tray{margin-bottom:0}
+  #flip-list summary .best{color:var(--gold)}
+  .tablewrap{overflow-x:auto}
+  .fliptab{width:100%;border-collapse:collapse;font-size:var(--fs-m)}
+  .fliptab th{
+    text-align:left;color:var(--dim);font-size:var(--fs-xs);
+    text-transform:uppercase;letter-spacing:1px;
+    padding:6px 14px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  }
+  .fliptab td{padding:7px 14px;border-bottom:1px solid var(--line)}
+  .fliptab tr:last-child td{border-bottom:none}
+  .fliptab th.num,.fliptab td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .fliptab tr.best td{color:var(--gold)}
+  .fliptab tr.best td:first-child::after{content:" ★"}
+  .fliptab .vnote{color:var(--dim);font-size:var(--fs-xs);display:block}
+  .fliptotal{margin-top:var(--sp-3);font-size:var(--fs-m);color:var(--dim);text-align:right}
+  .fliptotal b{color:var(--gold);font-variant-numeric:tabular-nums}
+  .fliptotal:empty{display:none}
 
   /* Gate: success-tinted banner (restore) + restore control */
   #gate .banner.ok{background:#0f201e;border-color:#1c3b3a;color:var(--accent)}
@@ -540,6 +567,14 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     <div id="accounts"></div>
   </section>
 
+  <!-- Flip desk — resale venue comparison for reward items -->
+  <section class="panel" id="flip-panel">
+    <h2>Flip desk</h2>
+    <div id="flip-advice"></div>
+    <div id="flip-list"></div>
+    <div id="flip-total" class="fliptotal"></div>
+  </section>
+
   <!-- Activity log -->
   <section class="panel">
     <h2>Activity log</h2>
@@ -750,7 +785,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       headline: "A physical reward is cash you haven't collected yet — claim it, then flip or keep it.",
       steps: [
         "Claim it before any claim-by date — unclaimed prizes simply evaporate.",
-        "Selling? Compare net proceeds across venues, not listing prices — fees and shipping change the winner.",
+        "Selling? The Flip desk below compares net proceeds across venues — fees and shipping change the winner, not listing prices.",
         "Keep the box and accessories — sealed and complete both sell meaningfully higher."
       ]
     },
@@ -780,6 +815,121 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       note = (note ? note + " " : "") + "Value is $0/unknown — verify the real balance first and match effort to what it's worth.";
     }
     return { headline: base.headline, steps, note };
+  }
+
+  /* ---------------------------------------------------------------
+   * Flip engine — estimated net proceeds for reward items across
+   * resale venues. Cost models are all-in ESTIMATES (seller fee +
+   * payment processing), with a typical shipping cost per venue.
+   * ------------------------------------------------------------- */
+  const VENUES = [
+    { name:"StockX",               pct:12,   fixed:0,    ship:15, note:"authenticated — sneakers, electronics, collectibles" },
+    { name:"eBay",                 pct:13.6, fixed:0.30, ship:15, note:"widest buyer pool" },
+    { name:"Mercari",              pct:12.9, fixed:0.50, ship:12, note:"fast to list, casual buyers" },
+    { name:"Swappa",               pct:3,    fixed:0,    ship:10, note:"phones & tech only" },
+    { name:"Facebook Marketplace", pct:0,    fixed:0,    ship:0,  note:"local pickup, cash — no fees" }
+  ];
+
+  // Estimated cash in hand after a venue's percentage fee, fixed fee, and
+  // typical shipping. Can go negative: fees can eat a low-value item whole.
+  function flipProfit(value, venue){
+    const gross = Number(value) || 0;
+    return gross * (1 - venue.pct / 100) - venue.fixed - venue.ship;
+  }
+
+  function bestVenue(value){
+    let best = null;
+    VENUES.forEach((v) => {
+      const net = flipProfit(value, v);
+      if (!best || net > best.net) best = { venue: v, net };
+    });
+    return best;
+  }
+
+  // Flip desk: one expandable block per reward item (sorted by best net,
+  // highest first), an all-venue comparison table inside, a gold advice
+  // box naming the single best move, and a best-case total underneath.
+  function renderFlipDesk(accounts){
+    const advice = $("flip-advice"), list = $("flip-list"), totalEl = $("flip-total");
+    if (!advice || !list || !totalEl) return;
+    advice.textContent = ""; list.textContent = ""; totalEl.textContent = "";
+
+    const items = accounts
+      .filter((a) => a && a.type === "reward-item")
+      .map((a) => ({ a, best: bestVenue(a.balance) }))
+      .sort((x, y) => y.best.net - x.best.net);
+
+    if (!items.length){
+      list.appendChild(emptyState("◈", "No reward items to flip",
+        "Track physical rewards — a PlayStation 5, sneakers, a conference prize GPU — as reward-item accounts " +
+        "with their estimated resale value, and the venue-by-venue math shows up here."));
+      return;
+    }
+
+    const top = items[0];
+    const box = document.createElement("div");
+    box.className = "advice";
+    box.textContent = top.best.net > 0
+      ? "◆ Best flip right now: sell “" + ((top.a && top.a.name) || "(unnamed)") + "” on " + top.best.venue.name +
+        " — about " + usd(top.best.net) + " in hand after fees and shipping."
+      : "◆ Nothing on the desk nets a profit after fees — for low-value items, no-fee local pickup is the only venue that makes sense.";
+    advice.appendChild(box);
+
+    items.forEach(({ a, best }) => {
+      const d = document.createElement("details");
+      d.className = "tray";
+      const s = document.createElement("summary");
+      s.textContent = ((a && a.name) || "(unnamed)") + " · " + usd(a.balance) + " resale → ";
+      const bb = document.createElement("span");
+      bb.className = "best";
+      bb.textContent = "best: " + best.venue.name + " " + usd(best.net);
+      s.appendChild(bb);
+
+      const wrap = document.createElement("div");
+      wrap.className = "tablewrap";
+      const table = document.createElement("table");
+      table.className = "fliptab";
+      const thead = document.createElement("thead");
+      const hr = document.createElement("tr");
+      [["Venue", ""], ["Fees", ""], ["Est. net", "num"]].forEach(([txt, cls]) => {
+        const th = document.createElement("th");
+        th.textContent = txt;
+        if (cls) th.className = cls;
+        hr.appendChild(th);
+      });
+      thead.appendChild(hr);
+      const tbody = document.createElement("tbody");
+      VENUES.forEach((v) => {
+        const net = flipProfit(a.balance, v);
+        const tr = document.createElement("tr");
+        if (v === best.venue) tr.className = "best";
+        const tdV = document.createElement("td");
+        tdV.textContent = v.name;
+        const nv = document.createElement("span");
+        nv.className = "vnote";
+        nv.textContent = v.note;
+        tdV.appendChild(nv);
+        const tdF = document.createElement("td");
+        tdF.textContent = v.pct
+          ? v.pct + "%" + (v.fixed ? " + " + usd(v.fixed) : "") + (v.ship ? " + ~" + usd(v.ship) + " ship" : "")
+          : "none";
+        const tdN = document.createElement("td");
+        tdN.className = "num";
+        tdN.textContent = usd(net);
+        tr.append(tdV, tdF, tdN);
+        tbody.appendChild(tr);
+      });
+      table.append(thead, tbody);
+      wrap.appendChild(table);
+      d.append(s, wrap);
+      list.appendChild(d);
+    });
+
+    const total = items.reduce((s, x) => s + Math.max(0, x.best.net), 0);
+    totalEl.append("If every item sells at its best venue: ");
+    const b = document.createElement("b");
+    b.textContent = usd(total);
+    totalEl.appendChild(b);
   }
 
   // Ephemeral UI state — deliberately NOT part of DATA (never persisted).
@@ -1078,6 +1228,8 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     $("chip-total").textContent = usd(total);
     $("foot-meta").textContent  = plural(accounts.length, "account") + " · " + plural(DATA.log.length, "log entry", "log entries");
     $("tb-total").textContent   = usd(total);
+
+    renderFlipDesk(accounts);
 
     const shown = renderAccounts(accounts);
     $("tb-mid").textContent = UI.filter
