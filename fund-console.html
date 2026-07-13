@@ -754,9 +754,10 @@
       <div class="bulkin">
         <textarea id="bulk-text" spellcheck="false"
 placeholder="One account per line, pipe-delimited:
-name | type | balance | expires (YYYY-MM-DD or -) | notes
+service | balance | type | rewards | email | expiry (YYYY-MM-DD or -) | notes
 
-Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
+Steam gift card | 20.00 | gift-card | 0 | - | - | code in email from 2023
+Chase Sapphire | 0 | credit-card | 240.00 | me@mail.com | 2026-12-31 | points balance"></textarea>
         <div class="bulkrow">
           <button id="bulk-btn" type="button">Import lines</button>
           <span class="muted">Types: store-credit, credit-card, payment-app, gift-card, crypto-exchange, crypto-wallet, reward-item, other</span>
@@ -1455,7 +1456,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
    * Schema versioning — migrate() runs on every unlock so a vault
    * written by ANY older build opens cleanly instead of bricking.
    * ------------------------------------------------------------- */
-  const SCHEMA = 5;   // v5 adds login credentials (email/username/password) + recovered flag
+  const SCHEMA = 6;   // v6 adds rewards value; v5 added login credentials + recovered flag
 
   // Normalize a decrypted vault of any prior shape to the current schema.
   // Also the NaN firewall: every account field is coerced to a safe value.
@@ -1473,6 +1474,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
         balance: Number.isFinite(bal) ? bal : 0,
         expires: (a && typeof a.expires === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.expires)) ? a.expires : null,
         notes:   (a && a.notes != null) ? String(a.notes) : "",
+        rewards: Number.isFinite(Number(a && a.rewards)) ? Number(a && a.rewards) : 0,
         email:    (a && a.email != null) ? String(a.email) : "",
         username: (a && a.username != null) ? String(a.username) : "",
         password: (a && a.password != null) ? String(a.password) : "",
@@ -2671,9 +2673,10 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     try { await save(); } catch (e2){ /* banner shown by save(); data stays in memory */ }
   }
 
-  // Pipe-delimited lines: name | type | balance | expires | notes.
+  // Pipe-delimited lines: service | balance | type | rewards | email | expiry | notes.
   // Bad lines are reported back with the line number and reason — never
   // silently dropped, never partially parsed into the vault.
+  const BULK_ORDER = "service | balance | type | rewards | email | expiry (YYYY-MM-DD) | notes";
   async function bulkImport(){
     const report = $("bulk-report");
     report.textContent = "";
@@ -2683,18 +2686,21 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       const line = raw.trim();
       if (!line) return;
       const p = line.split("|").map((s) => s.trim());
-      if (p.length < 3){ errors.push("Line " + (i+1) + ": expected name | type | balance | expires | notes"); return; }
-      const name = p[0], type = p[1];
-      if (!name){ errors.push("Line " + (i+1) + ": missing name"); return; }
-      if (!TYPE_LABELS[type]){ errors.push("Line " + (i+1) + ": unknown type “" + type + "”"); return; }
-      const balance = parseAmount(p[2]);
-      if (balance === null){ errors.push("Line " + (i+1) + ": bad balance “" + p[2] + "”"); return; }
-      let expires = (p[3] && p[3] !== "-") ? p[3] : null;
+      if (p.length < 3){ errors.push("Line " + (i+1) + ": expected " + BULK_ORDER); return; }
+      const name = p[0], type = p[2];
+      if (!name){ errors.push("Line " + (i+1) + ": missing service — order is " + BULK_ORDER); return; }
+      const balance = parseAmount(p[1]);
+      if (balance === null){ errors.push("Line " + (i+1) + ": bad balance “" + p[1] + "” — order is " + BULK_ORDER); return; }
+      if (!TYPE_LABELS[type]){ errors.push("Line " + (i+1) + ": unknown type “" + type + "” — order is " + BULK_ORDER); return; }
+      const rewards = parseAmount(p[3]);
+      if (rewards === null){ errors.push("Line " + (i+1) + ": bad rewards “" + p[3] + "” — order is " + BULK_ORDER); return; }
+      const email = (p[4] && p[4] !== "-") ? p[4] : "";
+      let expires = (p[5] && p[5] !== "-") ? p[5] : null;
       if (expires && !/^\d{4}-\d{2}-\d{2}$/.test(expires)){
-        errors.push("Line " + (i+1) + ": bad date “" + p[3] + "” — use YYYY-MM-DD or -"); return;
+        errors.push("Line " + (i+1) + ": bad date “" + p[5] + "” — use YYYY-MM-DD or -"); return;
       }
-      added.push({ name, type, balance, expires, notes: p.slice(4).join(" | "),
-                   email:"", username:"", password:"", recovered:false,
+      added.push({ name, type, balance, rewards, expires, notes: p.slice(6).join(" | "),
+                   email, username:"", password:"", recovered:false,
                    chain:"", address:"", tokens:"", cost:0, venue:"", ship:0 });
     });
 
