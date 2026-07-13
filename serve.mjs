@@ -15,7 +15,7 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HOST = "127.0.0.1";                 // localhost only
-const PORT = Number(process.env.PORT) || 4173;
+const PORT = Number(process.env.PORT) || 5501;   // matches the Live Server port
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PAGE = "fund-console.html";
 
@@ -82,8 +82,12 @@ const server = createServer((req, res) => {
     }
     const type = MIME[extname(path)] || "application/octet-stream";
     if (rel === PAGE){
+      // Relax connect-src inside the CSP <meta> tag ONLY — anchored on the
+      // http-equiv attribute so a comment mentioning the directive (the page
+      // has one) can never soak up the replacement instead.
       const html = buf.toString("utf8")
-        .replace("connect-src 'none'", "connect-src 'self'")   // allow same-origin SSE only
+        .replace(/(http-equiv="Content-Security-Policy"[\s\S]*?)connect-src 'none'/,
+                 "$1connect-src 'self'")                       // allow same-origin SSE only
         .replace("</body>", RELOAD_SNIPPET + "\n</body>");
       res.writeHead(200, { "content-type": type, "cache-control": "no-store" });
       res.end(html);

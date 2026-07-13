@@ -1,4 +1,17 @@
 {
+  // Live Server (ritwickdey.liveserver) — same port as serve.mjs, so the
+  // dev vault lives on one origin (127.0.0.1:5501) whichever server runs.
+  // Open fund-console.html via right-click → "Open with Live Server", or
+  // browse straight to http://127.0.0.1:5501/fund-console.html.
+  "liveServer.settings.port": 5501,
+  "liveServer.settings.host": "127.0.0.1",
+  "liveServer.settings.donotShowInfoMsg": true,
+
+  "editor.formatOnSave": true,
+  // The deliverable is one hand-formatted 2000-line HTML file; the built-in
+  // HTML formatter would reflow all of it into a noisy diff. Keep it manual.
+  "[html]": { "editor.formatOnSave": false },
+
   "files.insertFinalNewline": true,
   "files.trimTrailingWhitespace": true,
   "editor.tabSize": 2,

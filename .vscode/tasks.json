@@ -2,7 +2,16 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "serve fund-console",
+      "label": "Preview Fund Console",
+      "detail": "Start Live Server (needs ritwickdey.liveserver) on http://127.0.0.1:5501",
+      "type": "shell",
+      "command": "echo Live Server starting on http://127.0.0.1:5501/fund-console.html ${command:extension.liveServer.goOnline}",
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    },
+    {
+      "label": "Serve (no extension)",
+      "detail": "Zero-dependency fallback: node serve.mjs on http://127.0.0.1:5501 with live reload",
       "type": "shell",
       "command": "node serve.mjs",
       "isBackground": true,

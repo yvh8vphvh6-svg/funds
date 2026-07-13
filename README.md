@@ -43,16 +43,20 @@ The app works **fully offline**. You can run it from a laptop with Wi-Fi disable
 
 ### Local development (optional)
 
-`serve.mjs` is a zero-dependency dev server (Node 18+) for working on the console itself:
+Two preview options, both on **http://127.0.0.1:5501**:
 
-```bash
-node serve.mjs   # → http://127.0.0.1:4173
-```
+1. **Live Server (one-click)** — install the recommended `ritwickdey.liveserver` extension (VS Code will offer it via `.vscode/extensions.json`; port and host are pre-configured in `.vscode/settings.json`). Right-click `fund-console.html` → *Open with Live Server*, or run the **Preview Fund Console** task from the command palette.
+2. **No extension** — `serve.mjs` is a zero-dependency dev server (Node 18+, built-in modules only):
 
-- **Localhost only** — it binds `127.0.0.1`, never a LAN interface, so the dev loop can't be reached from another machine.
-- **Auto-reload** — it watches `fund-console.html` and refreshes open tabs on save. The reload client is *injected at serve time*; the file on disk keeps its hardened CSP (`connect-src 'none'`), so the shipped app remains incapable of making any network request.
-- **Origin indicator** — the header chip shows where the page is running: `file://` (normal use), `127.0.0.1:4173 · dev` (dev server, live reload active), or a loud ⚠ warning for any other origin, which the console is not meant to run from.
-- **VS Code** — `Terminal → Run Build Task` starts the server (`.vscode/tasks.json`); shared editor settings and extension recommendations live alongside it in `.vscode/`.
+   ```bash
+   node serve.mjs   # → http://127.0.0.1:5501
+   ```
+
+   or run the **Serve (no extension)** task (`Terminal → Run Build Task`, it's the default).
+
+- **Localhost only** — both servers bind `127.0.0.1`, never a LAN interface, so the dev loop can't be reached from another machine.
+- **Auto-reload** — `serve.mjs` watches `fund-console.html` and refreshes open tabs on save. The reload client is *injected at serve time*; the file on disk keeps its hardened CSP (`connect-src 'none'`), so the shipped app remains incapable of making any network request when opened via `file://`.
+- **Origin indicator** — the header chip shows where the page is running: `file://` (normal use), `127.0.0.1:5501 · dev` (dev server, live reload active), or a loud ⚠ warning for any other origin, which the console is not meant to run from.
 
 ## Features
 
@@ -117,6 +121,7 @@ Lines that fail to parse are reported back with a reason instead of being silent
 - **Where data lives:** exclusively in your browser's `localStorage`, as a single AES-GCM-encrypted blob. Nothing is written anywhere else and nothing is sent anywhere, ever.
 - **Encryption details:** WebCrypto `AES-GCM` with a 256-bit key derived from your passphrase via `PBKDF2`; a fresh random IV per save; salt and IV stored alongside the ciphertext (they are not secret — the passphrase is).
 - **No third parties:** no CDN scripts, no web fonts, no analytics, no error reporting. The page makes zero network requests.
+- **Storage origins:** `file://` and `http://127.0.0.1:5501` are different browser origins with completely separate `localStorage` — a vault created one way will never appear the other way. Keep real data on the `file://` side, treat anything in the dev server's vault as disposable test data, and use the encrypted export/import as the bridge if data ever needs to move between them. The header's origin chip always shows which vault is open.
 - **Backups:** the export feature produces an *encrypted* backup file. The repo's `.gitignore` deliberately excludes `vault_backup.json`, `fund_vault_backup.json`, and `*.enc` so a backup can never be accidentally committed.
 - **Deleting data:** clearing the browser's site data (or `localStorage`) permanently destroys the vault — keep an exported backup first.
 - **The hard rule:** lost passphrase = lost data. That is the cost of the app never knowing your secrets.
