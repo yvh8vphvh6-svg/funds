@@ -54,7 +54,10 @@
     text-rendering:optimizeLegibility;
     overflow-x:clip;
   }
-  body.unlocked{padding-bottom:48px}   /* clear the fixed status line */
+  /* Clear the fixed status line. Padding must live on main, not body:
+     body{height:100%} pins the body box to the viewport, so body padding
+     sits inside that box and never trails the overflowing content. */
+  body.unlocked main{padding-bottom:72px}
   .num{font-variant-numeric:tabular-nums}
 
   /* --- Header bar ------------------------------------------------ */
@@ -155,7 +158,7 @@
   .stat .v .unit{font-size:var(--fs-m);color:var(--dim);margin-left:6px;line-height:2.1}
 
   /* --- Accounts: type groups + rows ------------------------------ */
-  #filter{width:230px;max-width:100%;padding:7px 11px;font-size:var(--fs-m)}
+  #filter,#pb-search{width:230px;max-width:100%;padding:7px 11px;font-size:var(--fs-m)}
   #sort{width:auto;padding:7px 11px;font-size:var(--fs-m)}
   #accounts{display:grid;gap:var(--sp-2)}
 
@@ -280,6 +283,16 @@
   .pbin{padding:2px 14px 14px}
   .pbin ol{margin:8px 0 0;padding-left:18px;display:grid;gap:5px;font-size:var(--fs-m);color:var(--txt)}
   .pbin li::marker{color:var(--accent)}
+
+  /* Per-card playbook guides — expand under the row like the route box */
+  .pbbox{
+    display:none;padding:2px 14px 14px 26px;
+    border-top:1px dashed var(--line);background:rgba(63,208,201,.02);
+  }
+  .pbbox.open{display:block}
+  .pbbox h4{margin:11px 0 4px;font-size:var(--fs-m);color:var(--accent);font-weight:600}
+  .pbbox ol{margin:0 0 6px;padding-left:18px;display:grid;gap:5px;font-size:var(--fs-m);color:var(--txt)}
+  .pbbox li::marker{color:var(--accent)}
 
   /* --- Add account + bulk import --------------------------------- */
   .addbox{
@@ -670,10 +683,15 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
   <!-- Playbook library — step-by-step guides for the common recovery scenarios -->
   <section class="panel" id="playbook-panel">
-    <h2>Playbook library</h2>
+    <div class="panel-head">
+      <h2>Playbook library</h2>
+      <input id="pb-search" type="search" placeholder="Search playbooks&hellip;"
+             autocomplete="off" spellcheck="false" aria-label="Search playbooks by title or step text">
+    </div>
     <p class="muted" style="margin:0 0 var(--sp-3)">
       Step-by-step runs for the classic stuck-money situations. Every step is something
-      you do yourself, through the service's official channels.
+      you do yourself, through the service's official channels. Matching accounts get a
+      📖 button right on their card.
     </p>
     <div id="playbooks"></div>
   </section>
@@ -1163,10 +1181,14 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
   /* ---------------------------------------------------------------
    * Playbook library — step-by-step runs for the classic stuck-money
-   * scenarios. Static content, rendered once at boot.
+   * scenarios, keyed by service/scenario. `match` holds |-separated
+   * tokens; an account whose name or type contains one (case-
+   * insensitive substring) gets a 📖 Playbook button on its card.
+   * The panel itself is free-text searchable.
    * ------------------------------------------------------------- */
   const PLAYBOOKS = [
     {
+      match: "gift-card|gift card",
       title: "Dormant gift card",
       steps: [
         "Check the real balance on the issuer's site or the number on the back — years-old cards routinely still carry value.",
@@ -1176,6 +1198,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       ]
     },
     {
+      match: "store-credit|store credit|saks|merch credit",
       title: "Store credit at a merchant you no longer shop at",
       steps: [
         "Verify the credit still exists — quote the original order or return number from your email.",
@@ -1185,6 +1208,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       ]
     },
     {
+      match: "payment-app|paypal|venmo|cash app",
       title: "Stranded payment-app balance",
       steps: [
         "Recover the login first: the app's official flow, using the old email address or phone number the account was created with.",
@@ -1194,6 +1218,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       ]
     },
     {
+      match: "crypto-exchange|exchange|binance|coinbase|kraken",
       title: "Locked-out exchange account",
       steps: [
         "Open a ticket through the exchange's official support portal only — never through anyone who contacts you first.",
@@ -1203,6 +1228,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       ]
     },
     {
+      match: "crypto-wallet|wallet|phantom|metamask|ledger",
       title: "Half-remembered wallet",
       steps: [
         "Inventory everywhere a wallet could live: old phones, laptops, browser extensions, hardware wallets, USB sticks, paper in drawers.",
@@ -1212,6 +1238,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       ]
     },
     {
+      match: "other|unclaimed|escheat",
       title: "Unclaimed property sweep",
       steps: [
         "Search every state you've ever lived in — each runs its own free, official unclaimed-property database.",
@@ -1219,12 +1246,65 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
         "File claims directly with the state — it is always free; anyone charging a “finder's fee” for this is selling you your own money.",
         "Add each filed claim as an account here (type: other) so the follow-up doesn't evaporate like the original balance did."
       ]
+    },
+    {
+      match: "credit-card|credit card|negative balance|refund",
+      title: "Negative credit-card balance (the bank owes you)",
+      steps: [
+        "Confirm the negative balance on the statement — usually a refund that posted after payoff, or an over-payment.",
+        "Call the issuer, or use the app's “request refund” flow, and ask for the credit back — banks must return it on request.",
+        "Choose a check or ACH to your bank; never pull it out as a cash advance — the fees destroy the value.",
+        "No rush? Spending it down on the card works too — the credit offsets new purchases automatically."
+      ]
+    },
+    {
+      match: "credit-card|rewards|points|statement credit",
+      title: "Card rewards → statement credit",
+      steps: [
+        "Log in and read the actual redemption menu — cash equivalents first: statement credit, direct deposit, check.",
+        "Statement credit at 1¢/point is the zero-effort floor; only travel-partner transfers reliably beat it.",
+        "Skip gift-card redemptions below 1¢/point — they pay worse than cash.",
+        "Account dormant? Redeem everything now — inactivity clauses quietly void points."
+      ]
+    },
+    {
+      match: "fandango",
+      title: "Fandango credit into Apple Wallet",
+      steps: [
+        "Check both balances on your account page — gift-card money rarely expires, promo credits do.",
+        "Buy the ticket with the credit in the Fandango app or site.",
+        "Open the confirmation and add the mobile ticket to Apple Wallet, so the pass survives app logouts and lost emails.",
+        "Concession-eligible theater? Burn small remainders on snacks at the counter."
+      ]
+    },
+    {
+      match: "crypto-wallet|dust|dex|swap",
+      title: "Wallet dust consolidation on a DEX",
+      steps: [
+        "Inventory every small balance across chains — dust adds up, but gas decides what's worth moving.",
+        "Swap illiquid or worthless tokens into one liquid asset (SOL, ETH, or USDC) on a reputable DEX, cheapest chain first.",
+        "Skip any swap where gas exceeds the token's value — that's not recovery, that's donation.",
+        "Never approve unlimited spending for a one-off swap, and never sign transactions from unsolicited “claim” links."
+      ]
     }
   ];
 
-  function renderPlaybooks(){
+  function renderPlaybooks(filter){
     const host = $("playbooks");
-    PLAYBOOKS.forEach((pb) => {
+    host.textContent = "";
+    const q = String(filter || "").trim().toLowerCase();
+    const shown = PLAYBOOKS.filter((pb) => !q ||
+      pb.title.toLowerCase().includes(q) ||
+      pb.match.toLowerCase().includes(q) ||
+      pb.steps.some((s) => s.toLowerCase().includes(q)));
+    if (!shown.length){
+      const e = document.createElement("div");
+      e.className = "muted";
+      e.textContent = "No playbooks match “" + filter + "”.";
+      host.appendChild(e);
+      return;
+    }
+    shown.forEach((pb) => {
       const d = document.createElement("details");
       d.className = "tray";
       const s = document.createElement("summary");
@@ -1241,6 +1321,14 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       d.append(s, body);
       host.appendChild(d);
     });
+  }
+
+  // Playbooks that apply to one account: any match token found in the
+  // account's name or type (case-insensitive substring).
+  function matchPlaybooks(a){
+    const hay = (String((a && a.name) || "") + " " + String((a && a.type) || "")).toLowerCase();
+    return PLAYBOOKS.filter((pb) =>
+      pb.match.split("|").some((tok) => tok && hay.includes(tok)));
   }
 
   // Ephemeral UI state — deliberately NOT part of DATA (never persisted).
@@ -1833,6 +1921,38 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       if (open && !box.hasChildNodes()) renderRoute(box, a);   // build lazily, once
     });
 
+    // 📖 Playbook — inline guides for accounts matching a playbook's tokens.
+    // Same expand pattern as Recover: pure DOM toggle, built lazily once.
+    const pbs = matchPlaybooks(a);
+    let pbBox = null;
+    if (pbs.length){
+      const pbBtn = document.createElement("button");
+      pbBtn.type = "button";
+      pbBtn.className = "recover pbbtn";
+      pbBtn.textContent = "📖 Playbook";
+      pbBtn.setAttribute("aria-expanded", "false");
+      row.appendChild(pbBtn);
+      pbBox = document.createElement("div");
+      pbBox.className = "pbbox";
+      pbBtn.addEventListener("click", () => {
+        const open = pbBox.classList.toggle("open");
+        pbBtn.setAttribute("aria-expanded", String(open));
+        if (open && !pbBox.hasChildNodes()){
+          pbs.forEach((pb) => {
+            const h = document.createElement("h4");
+            h.textContent = "📖 " + pb.title;
+            const ol = document.createElement("ol");
+            pb.steps.forEach((s) => {
+              const li = document.createElement("li");
+              li.textContent = s;
+              ol.appendChild(li);
+            });
+            pbBox.append(h, ol);
+          });
+        }
+      });
+    }
+
     const del = document.createElement("button");
     del.type = "button";
     del.className = "del";
@@ -1844,6 +1964,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
     const wrap = document.createElement("div");
     wrap.append(row, box);
+    if (pbBox) wrap.appendChild(pbBox);
     return wrap;
   }
 
@@ -2252,6 +2373,12 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     $("filter").addEventListener("input", (e) => { UI.filter = e.target.value.trim(); render(); });
     $("filter").addEventListener("keydown", (e) => {
       if (e.key === "Escape"){ e.target.value = ""; UI.filter = ""; render(); }
+    });
+
+    // Playbook library search: same live/Esc behavior, panel-local state.
+    $("pb-search").addEventListener("input", (e) => renderPlaybooks(e.target.value));
+    $("pb-search").addEventListener("keydown", (e) => {
+      if (e.key === "Escape"){ e.target.value = ""; renderPlaybooks(""); }
     });
 
     // Entry, bulk import, backup export / restore.
