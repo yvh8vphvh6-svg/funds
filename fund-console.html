@@ -329,12 +329,12 @@
   .tray[open] summary::before{content:"▾ "}
   .tray summary:hover{background:var(--accent-soft);color:var(--txt)}
   .tray summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-  #bulk .bulkin{padding:0 14px 14px;display:grid;gap:var(--sp-3)}
-  #bulk textarea{min-height:110px;resize:vertical;font-size:var(--fs-m);line-height:1.7}
-  #bulk .bulkrow{display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap}
-  #bulk-report{display:grid;gap:2px;font-size:var(--fs-m)}
-  #bulk-report .ok{color:var(--accent)}
-  #bulk-report .err{color:var(--bad)}
+  #bulk .bulkin,#creds .bulkin{padding:0 14px 14px;display:grid;gap:var(--sp-3)}
+  #bulk textarea,#creds textarea{min-height:110px;resize:vertical;font-size:var(--fs-m);line-height:1.7}
+  #bulk .bulkrow,#creds .bulkrow{display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap}
+  #bulk-report,#creds-report{display:grid;gap:2px;font-size:var(--fs-m)}
+  #bulk-report .ok,#creds-report .ok{color:var(--accent)}
+  #bulk-report .err,#creds-report .err{color:var(--bad)}
 
   /* Inbox search terms — click-to-copy chips ("Find accounts you forgot") */
   #inbox-terms .termsin{padding:0 14px 14px;display:grid;gap:var(--sp-3)}
@@ -763,6 +763,22 @@ Chase Sapphire | 0 | credit-card | 240.00 | me@mail.com | 2026-12-31 | points ba
           <span class="muted">Types: store-credit, credit-card, payment-app, gift-card, crypto-exchange, crypto-wallet, reward-item, other</span>
         </div>
         <div id="bulk-report"></div>
+      </div>
+    </details>
+
+    <details id="creds" class="tray">
+      <summary>Paste credentials</summary>
+      <div class="bulkin">
+        <textarea id="creds-text" spellcheck="false"
+placeholder="One login per line — creates pending accounts:
+email:password
+email | password
+service, email:password"></textarea>
+        <div class="bulkrow">
+          <button id="creds-btn" type="button">Import credentials</button>
+          <span class="muted">Duplicates (by email) are skipped. Credential values are never written to the activity log.</span>
+        </div>
+        <div id="creds-report"></div>
       </div>
     </details>
 
@@ -1456,7 +1472,7 @@ Chase Sapphire | 0 | credit-card | 240.00 | me@mail.com | 2026-12-31 | points ba
    * Schema versioning — migrate() runs on every unlock so a vault
    * written by ANY older build opens cleanly instead of bricking.
    * ------------------------------------------------------------- */
-  const SCHEMA = 6;   // v6 adds rewards value; v5 added login credentials + recovered flag
+  const SCHEMA = 7;   // v7 adds status (e.g. "pending"); v6 adds rewards value; v5 added login credentials + recovered flag
 
   // Normalize a decrypted vault of any prior shape to the current schema.
   // Also the NaN firewall: every account field is coerced to a safe value.
@@ -1475,6 +1491,7 @@ Chase Sapphire | 0 | credit-card | 240.00 | me@mail.com | 2026-12-31 | points ba
         expires: (a && typeof a.expires === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.expires)) ? a.expires : null,
         notes:   (a && a.notes != null) ? String(a.notes) : "",
         rewards: Number.isFinite(Number(a && a.rewards)) ? Number(a && a.rewards) : 0,
+        status:  (a && a.status != null) ? String(a.status) : "",
         email:    (a && a.email != null) ? String(a.email) : "",
         username: (a && a.username != null) ? String(a.username) : "",
         password: (a && a.password != null) ? String(a.password) : "",
@@ -2725,6 +2742,78 @@ Chase Sapphire | 0 | credit-card | 240.00 | me@mail.com | 2026-12-31 | points ba
     }
   }
 
+  // Parse one credentials line into { service, email, password }, or return
+  // { error:true } for a line we can't split, or null for a blank line.
+  // Three accepted shapes (a leading "service, " prefix is optional on any):
+  //   email:password        email | password        service, email:password
+  // The email/password split is on the FIRST : or | only, so passwords may
+  // contain later separators. Nothing here is ever echoed back to the user.
+  function parseCredLine(raw){
+    const line = String(raw == null ? "" : raw).trim();
+    if (!line) return null;
+    let service = "", rest = line;
+    const comma = line.indexOf(",");
+    if (comma > -1){
+      const after = line.slice(comma + 1);
+      if (after.includes(":") || after.includes("|")){   // comma only marks a service prefix when a credential follows
+        service = line.slice(0, comma).trim();
+        rest = after.trim();
+      }
+    }
+    let sep = -1;
+    for (let k = 0; k < rest.length; k++){
+      if (rest[k] === ":" || rest[k] === "|"){ sep = k; break; }
+    }
+    if (sep === -1) return { error: true };
+    const email = rest.slice(0, sep).trim();
+    const password = rest.slice(sep + 1).trim();
+    if (!email || !password) return { error: true };
+    return { service, email, password };
+  }
+
+  // Credentials paste import: one login per line -> "pending" accounts with the
+  // email/password filled. Deduped by email against the vault and within the
+  // batch. Only counts ever reach the report and the activity log — no email or
+  // password value is written to either.
+  async function credsImport(){
+    const report = $("creds-report");
+    report.textContent = "";
+    const lines = $("creds-text").value.split("\n");
+    const have = new Set(
+      DATA.accounts.map((a) => String(a && a.email || "").trim().toLowerCase()).filter(Boolean));
+    const seen = new Set();
+    const added = [];
+    let dupes = 0, bad = 0;
+    lines.forEach((raw) => {
+      const r = parseCredLine(raw);
+      if (r === null) return;                  // blank line — skip silently
+      if (r.error){ bad++; return; }
+      const key = r.email.toLowerCase();
+      if (have.has(key) || seen.has(key)){ dupes++; return; }
+      seen.add(key);
+      added.push({ name: r.service || r.email, type: "other", balance: 0, rewards: 0,
+                   expires: null, notes: "", email: r.email, username: "", password: r.password,
+                   recovered: false, status: "pending",
+                   chain: "", address: "", tokens: "", cost: 0, venue: "", ship: 0 });
+    });
+
+    added.forEach((a) => DATA.accounts.push(a));
+    const summary = document.createElement("div");
+    summary.className = added.length ? "ok" : "err";
+    const bits = [added.length + " added"];
+    if (dupes) bits.push(dupes + " duplicate" + (dupes === 1 ? "" : "s") + " skipped");
+    if (bad) bits.push(bad + " unparsable");
+    summary.textContent = bits.join(" · ");     // counts only — never the credentials themselves
+    report.appendChild(summary);
+
+    if (added.length){
+      logEvent("Credentials import: " + plural(added.length, "pending account") + " added");  // count only, by design
+      $("creds-text").value = "";
+      render();
+      try { await save(); } catch (e){ /* banner shown by save() */ }
+    }
+  }
+
   // Export = the encrypted blob exactly as stored (self-describing: kdf params
   // travel inside it), wrapped with a marker. Nothing decrypted, nothing leaks.
   function exportBackup(){
@@ -2899,6 +2988,7 @@ Chase Sapphire | 0 | credit-card | 240.00 | me@mail.com | 2026-12-31 | points ba
     // Collapsible activity log.
     $("log-toggle").addEventListener("click", () => { UI.logCollapsed = !UI.logCollapsed; syncLogPanel(); });
     $("bulk-btn").addEventListener("click", bulkImport);
+    $("creds-btn").addEventListener("click", credsImport);
     $("export-btn").addEventListener("click", exportBackup);
     $("wipe-btn").addEventListener("click", wipeVault);
     $("restore-btn").addEventListener("click", () => $("restore-file").click());
