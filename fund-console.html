@@ -184,10 +184,17 @@
   .gbody > div{overflow:hidden;min-width:0}
 
   .row{
-    display:flex;align-items:center;gap:var(--sp-3);
+    display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2) var(--sp-3);
     padding:9px 14px;border-top:1px solid var(--line);
     font-size:var(--fs-b);transition:background .15s var(--ease);
   }
+  /* Action cluster wraps as a single unit so the account name is never crushed
+     to a sliver behind the buttons on narrow screens (it used to ellipsize away). */
+  .row .row-actions{display:flex;align-items:center;gap:6px;flex:none;margin-left:auto}
+  /* Recovered accounts: record kept, dimmed, struck, excluded from every total. */
+  .row.recovered .nm,.row.recovered .note,.row.recovered .bal,.row.recovered .flipnet{opacity:.5}
+  .row.recovered .bal{text-decoration:line-through}
+  .row .tag.done{color:var(--good);border-color:rgba(74,222,128,.4)}
   .row:hover{background:var(--accent-soft)}
   .row .nm{flex:none;max-width:46%;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .row .note{flex:1;min-width:0;color:var(--dim);font-size:var(--fs-m);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -426,7 +433,9 @@
   }
   @media (max-width:520px){
     .row .note{display:none}
-    .row .nm{max-width:none;flex:1}
+    .row .nm{max-width:none;flex:1 1 auto}
+    /* Action cluster takes its own full-width line so the name is never crushed. */
+    .row .row-actions{flex-basis:100%;margin-left:0;justify-content:flex-end}
     .log .entry{grid-template-columns:1fr;gap:0}
     #totalsbar .mid{display:none}
     #filter{width:100%}
@@ -483,6 +492,85 @@
     background:transparent;border-color:rgba(248,113,113,.45);color:#fca5a5;
   }
   #expiry-banner button:hover{border-color:var(--bad);color:var(--bad)}
+
+  /* --- Credentials row (add form) + password reveal ------------- */
+  .credrow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--sp-3)}
+  .pwwrap{position:relative;display:flex}
+  .pwwrap input{padding-right:40px}
+  .pwwrap .reveal{
+    position:absolute;right:3px;top:50%;transform:translateY(-50%);
+    width:auto;padding:5px 8px;font-size:var(--fs-s);background:transparent;
+    border:none;color:var(--dim);
+  }
+  .pwwrap .reveal:hover{color:var(--accent);border:none}
+  .pwwrap .reveal:active{transform:translateY(-50%)}
+
+  /* --- Per-card edit / manage panel (expands under the row) ------ */
+  .editwrap{
+    display:none;padding:12px 14px 16px;
+    border-top:1px dashed var(--line);background:rgba(63,208,201,.03);
+  }
+  .editwrap.open{display:block}
+  .editbox{display:grid;gap:var(--sp-3);grid-template-columns:2fr 1.2fr .9fr 1fr}
+  .editbox .wide{grid-column:1/-1}
+  .editbox .fld{display:block;min-width:0}
+  .editbox .fld > span{display:block;font-size:var(--fs-s);color:var(--dim);margin:0 0 5px;letter-spacing:.5px}
+  .editbox .cryptorow,.editbox .fliprow,.editbox .credrow{grid-column:1/-1}
+  .edit-err{grid-column:1/-1;color:var(--bad);font-size:var(--fs-m);min-height:0}
+  .edit-err:empty{display:none}
+  .edit-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-3);margin-top:var(--sp-2)}
+  .edit-actions .grow{flex:1}
+  .edit-actions .recovered-toggle{width:auto;font-size:var(--fs-s)}
+  .edit-actions .recovered-toggle.on{color:var(--good);border-color:rgba(74,222,128,.5)}
+
+  /* Copy-login chips (inside the edit panel): click to copy; password masked */
+  .loginstrip{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2)}
+  .loginstrip .llabel{font-size:var(--fs-xs);color:var(--dim);letter-spacing:1px;text-transform:uppercase}
+  .copychip{
+    width:auto;font-size:var(--fs-m);padding:5px 12px;border-radius:16px;
+    background:var(--panel);color:var(--txt);display:inline-flex;align-items:center;gap:7px;
+  }
+  .copychip:hover{border-color:var(--accent);color:var(--accent)}
+  .copychip.copied{border-color:var(--good);color:var(--good)}
+  .copychip .k{color:var(--dim);font-size:var(--fs-xs);letter-spacing:.5px;text-transform:uppercase}
+  .copychip.copied .k{color:var(--good)}
+  /* Password chip is a container (reveal + copy are separate buttons — no nesting) */
+  .pwchip{
+    display:inline-flex;align-items:center;gap:6px;
+    border:1px solid var(--line);border-radius:16px;padding:4px 8px;background:var(--panel);
+  }
+  .pwchip.copied{border-color:var(--good)}
+  .pwchip .k{color:var(--dim);font-size:var(--fs-xs);letter-spacing:.5px;text-transform:uppercase}
+  .pwchip .pwval{font-size:var(--fs-m);letter-spacing:1px;min-width:64px}
+  .pwchip button{width:auto;background:transparent;border:none;color:var(--dim);padding:2px 5px;font-size:var(--fs-s)}
+  .pwchip button:hover{color:var(--accent);border:none}
+  .pwchip button:active{transform:none}
+
+  /* --- Collapsible activity log --------------------------------- */
+  #log-panel .panel-head{margin-bottom:var(--sp-4)}
+  #log-toggle{width:auto;font-size:var(--fs-s);padding:3px 10px}
+  #log-panel.log-collapsed #log{display:none}
+
+  /* --- Transient toast (export confirmation, password-copy notice) */
+  #toast{
+    position:fixed;left:50%;bottom:56px;transform:translateX(-50%);z-index:60;
+    display:none;max-width:90vw;
+    background:var(--panel);border:1px solid var(--accent);border-radius:var(--radius);
+    padding:9px 16px;font-size:var(--fs-m);color:var(--txt);text-align:center;
+    box-shadow:0 12px 30px rgba(0,0,0,.45);
+  }
+  #toast.show{display:block}
+
+  /* Mobile grid overrides for the new rows — placed AFTER their base rules so
+     they win the cascade (the base .credrow/.editbox live below the earlier
+     @media block, so an override up there would be re-overridden by the base). */
+  @media (max-width:720px){
+    .credrow{grid-template-columns:1fr}
+    .editbox{grid-template-columns:1fr 1fr}
+  }
+  @media (max-width:520px){
+    .editbox{grid-template-columns:1fr}
+  }
 
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-thumb{background:#1c2838;border-radius:6px}
@@ -597,7 +685,26 @@
       <button class="primary" type="submit">Add account</button>
       <div class="wide">
         <label for="a-notes">Notes</label>
-        <input id="a-notes" placeholder="Which email it's under, last 4 digits, where the code lives&hellip;" spellcheck="false">
+        <input id="a-notes" placeholder="Last 4 digits, where the code lives, anything else&hellip;" spellcheck="false">
+      </div>
+      <div id="cred-fields" class="wide credrow">
+        <div>
+          <label for="a-email">Login email</label>
+          <input id="a-email" placeholder="you@example.com" spellcheck="false" autocomplete="off">
+        </div>
+        <div>
+          <label for="a-username">Username</label>
+          <input id="a-username" placeholder="account username" spellcheck="false" autocomplete="off">
+        </div>
+        <div>
+          <label for="a-password">Password</label>
+          <div class="pwwrap">
+            <input id="a-password" type="password" placeholder="account password"
+                   spellcheck="false" autocomplete="new-password">
+            <button id="a-pw-reveal" class="reveal" type="button"
+                    aria-label="Show password" aria-pressed="false">show</button>
+          </div>
+        </div>
       </div>
       <div id="flip-fields" class="wide fliprow" hidden>
         <div>
@@ -696,15 +803,18 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     <div id="playbooks"></div>
   </section>
 
-  <!-- Activity log -->
-  <section class="panel">
-    <h2>Activity log</h2>
+  <!-- Activity log — collapsible, newest first -->
+  <section class="panel" id="log-panel">
+    <div class="panel-head">
+      <h2>Activity log</h2>
+      <button id="log-toggle" class="ghost" type="button" aria-expanded="true" aria-controls="log">Hide</button>
+    </div>
     <div id="log" class="log"></div>
   </section>
 
   <!-- Footer -->
   <div class="footnote">
-    <span>Encrypted at rest &middot; offline &middot; auto-locks after 10 idle minutes &middot; no network requests</span>
+    <span>Encrypted at rest &middot; offline &middot; auto-locks after 5 idle minutes &middot; no network requests</span>
     <span id="foot-meta"></span>
     <button id="wipe-btn" class="ghost danger" type="button">Wipe vault</button>
   </div>
@@ -712,6 +822,9 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
 <!-- Undo toast — one-shot restore after an account deletion. -->
 <div id="undo-toast" role="status"></div>
+
+<!-- Transient toast — export confirmation, password-copy notice. -->
+<div id="toast" role="status"></div>
 
 <!-- Status line — fixed tmux-style totals bar, shown while unlocked. -->
 <div id="totalsbar" role="status">
@@ -835,6 +948,10 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     "reward-item":"Reward items",    "other":"Other"
   };
   const TYPE_ORDER = Object.keys(TYPE_LABELS);
+
+  // An account still owed money = "active". Recovered accounts keep their record
+  // but are excluded from every money total and urgency computation.
+  const isActive = (a) => !!(a && !a.recovered);
 
   // Inbox search queries that surface forgotten balances. Each chip copies the
   // term to the clipboard so it can be pasted straight into an email search.
@@ -1102,7 +1219,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     advice.textContent = ""; list.textContent = ""; totalEl.textContent = "";
 
     const items = accounts
-      .filter((a) => a && a.type === "reward-item")
+      .filter((a) => a && a.type === "reward-item" && isActive(a))
       .map((a) => ({ a, best: bestVenueFor(a) }))
       .sort((x, y) => y.best.net - x.best.net);
 
@@ -1332,13 +1449,13 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
   }
 
   // Ephemeral UI state — deliberately NOT part of DATA (never persisted).
-  const UI = { filter:"", collapsed:new Set(), sort:"priority", expiryDismissed:false };
+  const UI = { filter:"", collapsed:new Set(), sort:"priority", expiryDismissed:false, logCollapsed:false };
 
   /* ---------------------------------------------------------------
    * Schema versioning — migrate() runs on every unlock so a vault
    * written by ANY older build opens cleanly instead of bricking.
    * ------------------------------------------------------------- */
-  const SCHEMA = 4;   // v4 adds flip economics (cost / venue / ship) on reward items
+  const SCHEMA = 5;   // v5 adds login credentials (email/username/password) + recovered flag
 
   // Normalize a decrypted vault of any prior shape to the current schema.
   // Also the NaN firewall: every account field is coerced to a safe value.
@@ -1356,6 +1473,10 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
         balance: Number.isFinite(bal) ? bal : 0,
         expires: (a && typeof a.expires === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.expires)) ? a.expires : null,
         notes:   (a && a.notes != null) ? String(a.notes) : "",
+        email:    (a && a.email != null) ? String(a.email) : "",
+        username: (a && a.username != null) ? String(a.username) : "",
+        password: (a && a.password != null) ? String(a.password) : "",
+        recovered: !!(a && a.recovered),
         chain:   (a && a.chain != null) ? String(a.chain) : "",
         address: (a && a.address != null) ? String(a.address) : "",
         tokens:  (a && a.tokens != null) ? String(a.tokens) : "",
@@ -1366,7 +1487,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     });
     d.log = Array.isArray(d.log) ? d.log.map(String) : [];
     d.schemaVersion = SCHEMA;
-    // Future field changes: add `if (from < 4){ ... }` steps here.
+    // Future field changes: add `if (from < 5){ ... }` steps here.
     return { data: d, migrated: from !== SCHEMA };
   }
 
@@ -1564,12 +1685,21 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     }
   }
 
-  // Lock by reloading — the derived key and plaintext DATA leave memory.
-  function lock(){ location.reload(); }
+  // Lock: drop the derived key + plaintext DATA from memory and cancel any
+  // pending clipboard wipe, then reload for a guaranteed-clean slate (no secret
+  // lingers in the DOM). Reload alone discards everything; the explicit nulling
+  // makes the "key leaves memory" guarantee legible and immediate.
+  function lock(){
+    KEY = null; activeSalt = null; activeIters = 0;
+    DATA = { accounts: [], log: [] };
+    cancelClipboardClear();
+    clearTimeout(idleTimer);
+    location.reload();
+  }
 
   // Auto-lock: after AUTO_LOCK_MIN with no activity, the vault locks itself
   // (an open vault on an unattended machine defeats the whole encryption).
-  const AUTO_LOCK_MIN = 10;
+  const AUTO_LOCK_MIN = 5;
   let idleTimer = null;
   function armAutoLock(){
     clearTimeout(idleTimer);
@@ -1594,7 +1724,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     DATA.accounts.splice(i, 1);
     logEvent("Removed “" + ((a && a.name) || "(unnamed)") + "” (" + usd(a && a.balance) + ")");
     if (pendingUndo) clearTimeout(pendingUndo.timer);
-    pendingUndo = { account: a, index: i, timer: setTimeout(hideUndo, 6000) };
+    pendingUndo = { account: a, index: i, timer: setTimeout(hideUndo, 10000) };
     showUndoToast(a);
     render();
     save().catch(() => {});               // failure already surfaced by save()
@@ -1684,11 +1814,14 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
   function render(){
     const accounts = DATA.accounts || [];
-    const total = accounts.reduce((sum,a) => sum + (Number(a && a.balance) || 0), 0);
+    const active = accounts.filter(isActive);
+    const recoveredCount = accounts.length - active.length;
+    // Every money figure counts only money still owed — recovered is already out.
+    const total = active.reduce((sum,a) => sum + (Number(a.balance) || 0), 0);
     const types = new Set(accounts.map(a => TYPE_LABELS[a && a.type] ? a.type : "other")).size;
 
     // --- Summary strip ---
-    $("stat-count").textContent = String(accounts.length);
+    renderAccountCount(accounts.length, recoveredCount);
     $("stat-total").textContent = usd(total);
     renderNextExpiration(accounts);
     renderExpiryBanner(accounts);
@@ -1700,8 +1833,8 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     $("foot-meta").textContent  = plural(accounts.length, "account") + " · " + plural(DATA.log.length, "log entry", "log entries");
     $("tb-total").textContent   = usd(total);
 
-    // Flip profit (potential): best-case net across all reward items.
-    const flipTotal = accounts.reduce((s, a) => s + Math.max(0, flipProfit(a) || 0), 0);
+    // Flip profit (potential): best-case net across active reward items.
+    const flipTotal = active.reduce((s, a) => s + Math.max(0, flipProfit(a) || 0), 0);
     $("tb-flip").textContent = usd(flipTotal);
     $("tb-flip-wrap").hidden = !(flipTotal > 0);
 
@@ -1710,9 +1843,32 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     const shown = renderAccounts(accounts);
     $("tb-mid").textContent = UI.filter
       ? shown + " of " + accounts.length + " shown · filter: “" + UI.filter + "”"
-      : plural(accounts.length, "account") + " · " + plural(types, "type");
+      : plural(accounts.length, "account") + " · " + plural(types, "type") +
+        (recoveredCount ? " · " + recoveredCount + " recovered" : "");
 
     renderLog(DATA.log);
+    syncLogPanel();
+  }
+
+  // "Accounts tracked" stat: total count, with a dim "N recovered" tail when any.
+  function renderAccountCount(total, recovered){
+    const el = $("stat-count");
+    el.textContent = String(total);
+    if (recovered > 0){
+      const s = document.createElement("span");
+      s.className = "unit";
+      s.textContent = recovered + " recovered";
+      el.appendChild(s);
+    }
+  }
+
+  // Apply the collapsible-log state (kept in UI, re-asserted on every render).
+  function syncLogPanel(){
+    const panel = $("log-panel"), btn = $("log-toggle");
+    if (!panel || !btn) return;
+    panel.classList.toggle("log-collapsed", UI.logCollapsed);
+    btn.setAttribute("aria-expanded", String(!UI.logCollapsed));
+    btn.textContent = UI.logCollapsed ? "Show" : "Hide";
   }
 
   function plural(n, one, many){
@@ -1724,7 +1880,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     const el = $("stat-exp");
     let next = null, nextDays = null;
     accounts.forEach((a) => {
-      if (!a || !a.expires) return;
+      if (!a || !a.expires || !isActive(a)) return;
       const d = daysLeft(a.expires);
       if (d === null || d < 0) return;
       if (nextDays === null || d < nextDays){ nextDays = d; next = a.expires; }
@@ -1749,7 +1905,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     if (!b) return;
     const expiring = accounts
       .map((a) => ({ a, d: daysLeft(a && a.expires) }))
-      .filter((x) => x.d !== null && x.d >= 0 && x.d <= 14)
+      .filter((x) => isActive(x.a) && x.d !== null && x.d >= 0 && x.d <= 14)
       .sort((x, y) => x.d - y.d);
     if (!expiring.length || UI.expiryDismissed){
       b.classList.remove("show");
@@ -1815,8 +1971,10 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
     TYPE_ORDER.filter(t => buckets.has(t)).forEach((t) => {
       const list = buckets.get(t);
-      list.sort(SORTERS[UI.sort] || SORTERS.priority);
-      const sum = list.reduce((s,a) => s + (Number(a && a.balance) || 0), 0);
+      const cmp = SORTERS[UI.sort] || SORTERS.priority;
+      // Recovered rows always sink to the bottom of their group, then the chosen sort.
+      list.sort((a, b) => ((a && a.recovered ? 1 : 0) - (b && b.recovered ? 1 : 0)) || cmp(a, b));
+      const sum = list.reduce((s,a) => s + (isActive(a) ? (Number(a.balance) || 0) : 0), 0);
 
       const group = document.createElement("section");
       group.className = "group" + (UI.collapsed.has(t) ? " closed" : "");
@@ -1833,7 +1991,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       const gsum = document.createElement("span");
       gsum.className = "gsum";
       const flipSum = t === "reward-item"
-        ? list.reduce((s, a) => s + Math.max(0, flipProfit(a) || 0), 0)
+        ? list.reduce((s, a) => s + (isActive(a) ? Math.max(0, flipProfit(a) || 0) : 0), 0)
         : 0;
       gsum.textContent = usd(sum) + (flipSum > 0 ? " · flip " + usd(flipSum) : "");
       head.append(arrow, label, count, gsum);
@@ -1858,7 +2016,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
 
   function accountRow(a){
     const row = document.createElement("div");
-    row.className = "row";
+    row.className = "row" + (a && a.recovered ? " recovered" : "");
     const nm = document.createElement("span");
     nm.className = "nm";
     nm.textContent = (a && a.name) ? a.name : "(unnamed)";
@@ -1875,6 +2033,12 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       ch.className = "tag";
       ch.textContent = a.chain;
       row.appendChild(ch);
+    }
+    if (a && a.recovered){
+      const done = document.createElement("span");
+      done.className = "tag done";
+      done.textContent = "RECOVERED";
+      row.appendChild(done);
     }
     if (a && a.expires){
       // Expiry chip — colored urgency band + countdown from expClass().
@@ -1903,26 +2067,27 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       row.appendChild(fn);
     }
 
-    // Recover ▸ — expands the recommended route inline under the row.
-    // Pure DOM toggle: open/closed is not state, so render() stays simple.
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "recover";
-    btn.textContent = "Recover ▸";
-    btn.setAttribute("aria-expanded", "false");
-    row.appendChild(btn);
+    // --- Action cluster: wraps as a unit so the name is never squeezed out. ---
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
 
+    // Recover ▸ — expands the recommended route inline (lazy build, pure DOM toggle).
     const box = document.createElement("div");
     box.className = "route";
-    btn.addEventListener("click", () => {
+    const recBtn = document.createElement("button");
+    recBtn.type = "button";
+    recBtn.className = "recover";
+    recBtn.textContent = "Recover ▸";
+    recBtn.setAttribute("aria-expanded", "false");
+    recBtn.addEventListener("click", () => {
       const open = box.classList.toggle("open");
-      btn.setAttribute("aria-expanded", String(open));
-      btn.textContent = open ? "Recover ▾" : "Recover ▸";
+      recBtn.setAttribute("aria-expanded", String(open));
+      recBtn.textContent = open ? "Recover ▾" : "Recover ▸";
       if (open && !box.hasChildNodes()) renderRoute(box, a);   // build lazily, once
     });
+    actions.appendChild(recBtn);
 
     // 📖 Playbook — inline guides for accounts matching a playbook's tokens.
-    // Same expand pattern as Recover: pure DOM toggle, built lazily once.
     const pbs = matchPlaybooks(a);
     let pbBox = null;
     if (pbs.length){
@@ -1931,7 +2096,6 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
       pbBtn.className = "recover pbbtn";
       pbBtn.textContent = "📖 Playbook";
       pbBtn.setAttribute("aria-expanded", "false");
-      row.appendChild(pbBtn);
       pbBox = document.createElement("div");
       pbBox.className = "pbbox";
       pbBtn.addEventListener("click", () => {
@@ -1951,8 +2115,32 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
           });
         }
       });
+      actions.appendChild(pbBtn);
     }
 
+    // Edit ▸ — full-field editor + copy-login chips + recovered toggle (lazy build).
+    const editWrap = document.createElement("div");
+    editWrap.className = "editwrap";
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "recover";
+    editBtn.textContent = "Edit ▸";
+    editBtn.setAttribute("aria-expanded", "false");
+    editBtn.addEventListener("click", () => {
+      const open = editWrap.classList.toggle("open");
+      editBtn.setAttribute("aria-expanded", String(open));
+      editBtn.textContent = open ? "Edit ▾" : "Edit ▸";
+      if (open && !editWrap.hasChildNodes()){
+        buildEditPanel(editWrap, a, () => {
+          editWrap.classList.remove("open");
+          editBtn.setAttribute("aria-expanded", "false");
+          editBtn.textContent = "Edit ▸";
+        });
+      }
+    });
+    actions.appendChild(editBtn);
+
+    // ✕ delete
     const del = document.createElement("button");
     del.type = "button";
     del.className = "del";
@@ -1960,12 +2148,226 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     del.title = "Remove account";
     del.setAttribute("aria-label", "Remove " + ((a && a.name) || "account"));
     del.addEventListener("click", () => deleteAccount(a));
-    row.appendChild(del);
+    actions.appendChild(del);
+
+    row.appendChild(actions);
 
     const wrap = document.createElement("div");
     wrap.append(row, box);
     if (pbBox) wrap.appendChild(pbBox);
+    wrap.appendChild(editWrap);
     return wrap;
+  }
+
+  // A compact copy chip for a non-secret credential (email / username).
+  function makeCopyChip(kind, value){
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "copychip";
+    b.title = "Copy " + kind;
+    const k = document.createElement("span");
+    k.className = "k"; k.textContent = kind;
+    const v = document.createElement("span");
+    v.textContent = value;
+    b.append(k, v);
+    b.addEventListener("click", () => copyCredential(value, b, false));
+    return b;
+  }
+
+  // Password chip: masked value + reveal toggle + copy (copy arms the 30s wipe).
+  // A container span, NOT a button, so the two inner buttons never nest.
+  function makePwChip(value){
+    const wrap = document.createElement("span");
+    wrap.className = "pwchip";
+    const k = document.createElement("span");
+    k.className = "k"; k.textContent = "pass";
+    const val = document.createElement("span");
+    val.className = "pwval";
+    const masked = "•".repeat(Math.min(12, Math.max(6, value.length)));
+    val.textContent = masked;
+    let shown = false;
+    const eye = document.createElement("button");
+    eye.type = "button"; eye.textContent = "show"; eye.title = "Reveal password";
+    eye.setAttribute("aria-pressed", "false");
+    eye.addEventListener("click", () => {
+      shown = !shown;
+      val.textContent = shown ? value : masked;
+      eye.textContent = shown ? "hide" : "show";
+      eye.setAttribute("aria-pressed", String(shown));
+    });
+    const copy = document.createElement("button");
+    copy.type = "button"; copy.textContent = "copy"; copy.title = "Copy password";
+    copy.addEventListener("click", () => copyCredential(value, wrap, true));
+    wrap.append(k, val, eye, copy);
+    return wrap;
+  }
+
+  // Build the per-card edit panel: copy-login chips, every editable field
+  // (credentials + crypto + flip, revealed by type), a recovered toggle, and
+  // Save / Cancel. `close()` collapses the panel (used by Cancel).
+  function buildEditPanel(container, a, close){
+    container.textContent = "";
+    const box = document.createElement("div");
+    box.className = "editbox";
+
+    const fld = (labelText, control, wide) => {
+      const l = document.createElement("label");
+      l.className = "fld" + (wide ? " wide" : "");
+      const s = document.createElement("span");
+      s.textContent = labelText;
+      l.append(s, control);
+      return l;
+    };
+    const input = (val, attrs) => {
+      const i = document.createElement("input");
+      i.value = val == null ? "" : String(val);
+      if (attrs) Object.keys(attrs).forEach((k) => i.setAttribute(k, attrs[k]));
+      return i;
+    };
+
+    // ---- Copy-login chips (present credentials only) ----
+    const strip = document.createElement("div");
+    strip.className = "loginstrip";
+    const lab = document.createElement("span");
+    lab.className = "llabel";
+    lab.textContent = (a.email || a.username || a.password) ? "Copy login" : "No login saved yet";
+    strip.appendChild(lab);
+    if (a.email)    strip.appendChild(makeCopyChip("email", a.email));
+    if (a.username) strip.appendChild(makeCopyChip("user",  a.username));
+    if (a.password) strip.appendChild(makePwChip(a.password));
+    box.appendChild(strip);
+
+    // ---- Core editable fields ----
+    const fName = input(a.name, { spellcheck:"false", placeholder:"Account name" });
+    const fType = document.createElement("select");
+    TYPE_ORDER.forEach((t) => {
+      const o = document.createElement("option");
+      o.value = t; o.textContent = TYPE_LABELS[t];
+      if (t === a.type) o.selected = true;
+      fType.appendChild(o);
+    });
+    const fBal = input(a.balance, { inputmode:"decimal", placeholder:"0.00" });
+    const fExp = input(a.expires || "", { type:"date" });
+    const fNotes = input(a.notes, { spellcheck:"false", placeholder:"Notes" });
+    box.append(
+      fld("Name", fName),
+      fld("Type", fType),
+      fld("Value (USD)", fBal),
+      fld("Expires", fExp),
+      fld("Notes", fNotes, true)
+    );
+
+    // ---- Credentials ----
+    const credRow = document.createElement("div");
+    credRow.className = "credrow";
+    const fEmail = input(a.email, { spellcheck:"false", placeholder:"you@example.com", autocomplete:"off" });
+    const fUser  = input(a.username, { spellcheck:"false", placeholder:"username", autocomplete:"off" });
+    const pwWrap = document.createElement("div");
+    pwWrap.className = "pwwrap";
+    const fPw = input(a.password, { type:"password", placeholder:"password", spellcheck:"false", autocomplete:"new-password" });
+    const pwReveal = document.createElement("button");
+    pwReveal.type = "button"; pwReveal.className = "reveal"; pwReveal.textContent = "show";
+    pwReveal.setAttribute("aria-pressed", "false"); pwReveal.setAttribute("aria-label", "Show password");
+    pwReveal.addEventListener("click", () => {
+      const show = fPw.type === "password";
+      fPw.type = show ? "text" : "password";
+      pwReveal.textContent = show ? "hide" : "show";
+      pwReveal.setAttribute("aria-pressed", String(show));
+      pwReveal.setAttribute("aria-label", (show ? "Hide" : "Show") + " password");
+    });
+    pwWrap.append(fPw, pwReveal);
+    credRow.append(fld("Login email", fEmail), fld("Username", fUser), fld("Password", pwWrap));
+    box.appendChild(credRow);
+
+    // ---- Crypto (shown for crypto types) ----
+    const cryptoRow = document.createElement("div");
+    cryptoRow.className = "cryptorow";
+    const fChain = document.createElement("select");
+    ["", "Solana", "Ethereum", "Base", "BSC", "Bitcoin", "Polygon", "other"].forEach((c) => {
+      const o = document.createElement("option");
+      o.value = c; o.textContent = c || "—";
+      if (c === (a.chain || "")) o.selected = true;
+      fChain.appendChild(o);
+    });
+    const fAddr = input(a.address, { spellcheck:"false", placeholder:"0x… / bc1… / base58" });
+    const fTokens = document.createElement("textarea");
+    fTokens.rows = 2; fTokens.spellcheck = false; fTokens.value = a.tokens || "";
+    fTokens.placeholder = "SOL | 2.5 | 340";
+    cryptoRow.append(fld("Chain", fChain), fld("Address (public only)", fAddr), fld("Tokens (one per line)", fTokens));
+    box.appendChild(cryptoRow);
+
+    // ---- Flip economics (shown for reward items) ----
+    const flipRow = document.createElement("div");
+    flipRow.className = "fliprow";
+    const fCost = input(a.cost, { inputmode:"decimal", placeholder:"0.00" });
+    const fVenue = document.createElement("select");
+    const vNone = document.createElement("option");
+    vNone.value = ""; vNone.textContent = "— best venue —"; fVenue.appendChild(vNone);
+    VENUES.forEach((v) => {
+      const o = document.createElement("option");
+      o.value = v.name; o.textContent = v.name;
+      if (v.name === a.venue) o.selected = true;
+      fVenue.appendChild(o);
+    });
+    const fShip = input(a.ship, { inputmode:"decimal", placeholder:"0.00" });
+    flipRow.append(fld("Cost (0 if free)", fCost), fld("Resale venue", fVenue), fld("Shipping (est.)", fShip));
+    box.appendChild(flipRow);
+
+    // Show only the sub-fields the current type uses; live on type change.
+    const syncCond = () => {
+      cryptoRow.hidden = !isCryptoType(fType.value);
+      flipRow.hidden = fType.value !== "reward-item";
+    };
+    fType.addEventListener("change", syncCond);
+    syncCond();
+
+    const err = document.createElement("p");
+    err.className = "edit-err"; err.setAttribute("role", "alert");
+    box.appendChild(err);
+
+    // ---- Actions: Save / Cancel + recovered toggle ----
+    const actions = document.createElement("div");
+    actions.className = "edit-actions";
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button"; saveBtn.className = "primary"; saveBtn.textContent = "Save changes";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button"; cancelBtn.className = "ghost"; cancelBtn.textContent = "Cancel";
+    const grow = document.createElement("span"); grow.className = "grow";
+    const recBtn = document.createElement("button");
+    recBtn.type = "button"; recBtn.className = "ghost recovered-toggle";
+    recBtn.textContent = a.recovered ? "✓ Recovered — mark active" : "Mark recovered";
+    recBtn.classList.toggle("on", !!a.recovered);
+    recBtn.addEventListener("click", () => {
+      a.recovered = !a.recovered;
+      logEvent((a.recovered ? "Marked recovered" : "Reopened") + " “" + (a.name || "(unnamed)") + "”");
+      render();                 // rebuilds the list — row re-dims / re-sorts, panel closes
+      save().catch(() => {});
+    });
+
+    saveBtn.addEventListener("click", () => {
+      err.textContent = "";
+      const res = buildAccountFromRaw({
+        name: fName.value, type: fType.value, balance: fBal.value, expires: fExp.value,
+        notes: fNotes.value, email: fEmail.value, username: fUser.value, password: fPw.value,
+        chain: fChain.value, address: fAddr.value, tokens: fTokens.value,
+        cost: fCost.value, venue: fVenue.value, ship: fShip.value
+      }, a);
+      if (res.error){
+        err.textContent = res.error;
+        const map = { name:fName, balance:fBal, cost:fCost, ship:fShip };
+        (map[res.focus] || fName).focus();
+        return;
+      }
+      Object.assign(a, res.account);        // mutate in place — DATA keeps the reference
+      logEvent("Edited “" + a.name + "”");
+      render();                             // rebuilds the list; this panel is discarded
+      save().catch(() => {});
+    });
+    cancelBtn.addEventListener("click", () => { if (close) close(); });
+
+    actions.append(saveBtn, cancelBtn, grow, recBtn);
+    box.appendChild(actions);
+    container.appendChild(box);
   }
 
   // Fill a .route box with recommendRoute()'s output. textContent only.
@@ -2073,23 +2475,93 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     });
   }
 
-  // Copy an inbox search term. navigator.clipboard needs a secure context and
-  // can be denied on file:// — fall back to a transient textarea + execCommand.
-  async function copyTerm(term, chip){
-    let ok = false;
-    try { await navigator.clipboard.writeText(term); ok = true; }
+  // Clipboard write with a file:// / insecure-context fallback (execCommand on a
+  // throwaway textarea). navigator.clipboard needs a secure context (localhost
+  // and https qualify) and can be denied on file://. Returns whether it stuck.
+  async function copyText(text){
+    try { await navigator.clipboard.writeText(text); return true; }
     catch (e){
       try {
         const ta = document.createElement("textarea");
-        ta.value = term;
+        ta.value = text;
         ta.setAttribute("readonly", "");
         ta.style.position = "fixed"; ta.style.opacity = "0";
         document.body.appendChild(ta);
         ta.select();
-        ok = document.execCommand("copy");
+        const ok = document.execCommand("copy");
         ta.remove();
-      } catch (e2){ ok = false; }
+        return ok;
+      } catch (e2){ return false; }
     }
+  }
+
+  // Transient toast (auto-hides). Reused for export + password-copy notices.
+  let toastTimer = null;
+  function showToast(msg, ms){
+    const t = $("toast");
+    if (!t) return;
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), ms || 2600);
+  }
+
+  // Clipboard hygiene: a password copy schedules a best-effort wipe after 30s so
+  // a copied secret does not linger on the OS clipboard. Only the most recent
+  // password copy's timer is live; lock() cancels it.
+  const CLIP_CLEAR_MS = 30000;
+  let clipClearTimer = null;
+  function doClipboardClear(){
+    Promise.resolve()
+      .then(() => navigator.clipboard.writeText(""))
+      .catch(() => copyText(" "))     // fallback for insecure contexts
+      .catch(() => {});               // best-effort — nothing more we can do
+  }
+  function scheduleClipboardClear(){
+    clearTimeout(clipClearTimer);
+    clipClearTimer = setTimeout(() => {
+      clipClearTimer = null;
+      // Clipboard writes need a focused document. If the tab is hidden at the
+      // 30s mark (the user switched away to paste the password — the whole
+      // point), defer the wipe until the tab is next visible.
+      if (document.hidden){
+        const onVis = () => {
+          if (document.hidden) return;
+          document.removeEventListener("visibilitychange", onVis);
+          doClipboardClear();
+        };
+        document.addEventListener("visibilitychange", onVis);
+      } else {
+        doClipboardClear();
+      }
+    }, CLIP_CLEAR_MS);
+  }
+  function cancelClipboardClear(){ clearTimeout(clipClearTimer); clipClearTimer = null; }
+
+  // Copy a credential from a chip. Passwords additionally arm the 30s clipboard
+  // wipe and announce it; email/username just flash "copied".
+  async function copyCredential(value, chip, isPassword){
+    const ok = await copyText(value);
+    chip.classList.toggle("copied", ok);
+    if (ok){
+      setTimeout(() => chip.classList.remove("copied"), 1400);
+      if (isPassword){ scheduleClipboardClear(); showToast("Password copied — clipboard auto-clears in 30s."); }
+      else showToast("Copied to clipboard.");
+    } else {
+      showToast("Copy blocked by the browser — select and copy manually.");
+    }
+  }
+
+  // Reset the add-form password field back to masked (after add / reset).
+  function resetPwReveal(){
+    const inp = $("a-password"), btn = $("a-pw-reveal");
+    if (inp) inp.type = "password";
+    if (btn){ btn.textContent = "show"; btn.setAttribute("aria-pressed", "false"); btn.setAttribute("aria-label", "Show password"); }
+  }
+
+  // Copy an inbox search term (uses the shared clipboard helper).
+  async function copyTerm(term, chip){
+    const ok = await copyText(term);
     chip.classList.toggle("copied", ok);
     $("terms-hint").textContent = ok
       ? "Copied “" + term + "” — paste it into your inbox search."
@@ -2128,50 +2600,72 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     });
   }
 
+  // Shared field reader + validator for BOTH add and edit. `raw` holds the string
+  // values straight from the inputs; `existing` (edit only) preserves fields the
+  // form doesn't own (currently just `recovered`). Returns {account, rolled} on
+  // success, or {error, focus} where focus names the field to jump to.
+  function buildAccountFromRaw(raw, existing){
+    const name = String(raw.name == null ? "" : raw.name).trim();
+    if (!name) return { error: "Give the account a name.", focus: "name" };
+    let balance = parseAmount(raw.balance);
+    if (balance === null) return { error: "Value must be a number like 43.50 — or leave it blank for $0.", focus: "balance" };
+    const type = TYPE_LABELS[raw.type] ? raw.type : "other";
+    const crypto = isCryptoType(type);
+    const flip = type === "reward-item";
+    // Token positions are the source of truth for value: when they parse to a
+    // priced total, that total IS the balance — no double entry, no drift.
+    const tokens = crypto ? String(raw.tokens == null ? "" : raw.tokens).trim() : "";
+    const tk = parseTokens(tokens);
+    const rolled = !!(tk && tk.total > 0);
+    if (rolled) balance = tk.total;
+    // Flip economics (reward items): the tracked balance IS the estimated resale
+    // price; cost and shipping refine the net.
+    const cost = flip ? parseAmount(raw.cost) : 0;
+    const ship = flip ? parseAmount(raw.ship) : 0;
+    if (cost === null || ship === null){
+      return { error: "Cost and shipping must be numbers like 12.50 — or blank for $0.", focus: cost === null ? "cost" : "ship" };
+    }
+    return { rolled, account: {
+      name,
+      type,
+      balance,
+      expires: raw.expires || null,              // date input yields YYYY-MM-DD
+      notes:    String(raw.notes    == null ? "" : raw.notes).trim(),
+      email:    String(raw.email    == null ? "" : raw.email).trim(),
+      username: String(raw.username == null ? "" : raw.username).trim(),
+      password: raw.password == null ? "" : String(raw.password),   // verbatim — never trim a password
+      recovered: existing ? !!existing.recovered : false,
+      chain:   crypto ? (raw.chain || "") : "",
+      address: crypto ? String(raw.address == null ? "" : raw.address).trim() : "",
+      tokens,
+      cost,
+      venue: flip ? (raw.venue || "") : "",
+      ship
+    }};
+  }
+
   async function addAccount(e){
     e.preventDefault();
     const err = $("add-err");
     err.textContent = "";
-    const name = $("a-name").value.trim();
-    if (!name){ err.textContent = "Give the account a name."; $("a-name").focus(); return; }
-    let balance = parseAmount($("a-balance").value);
-    if (balance === null){
-      err.textContent = "Value must be a number like 43.50 — or leave it blank for $0.";
-      $("a-balance").focus(); return;
+    const res = buildAccountFromRaw({
+      name: $("a-name").value, type: $("a-type").value, balance: $("a-balance").value,
+      expires: $("a-expires").value, notes: $("a-notes").value,
+      email: $("a-email").value, username: $("a-username").value, password: $("a-password").value,
+      chain: $("a-chain").value, address: $("a-address").value, tokens: $("a-tokens").value,
+      cost: $("a-cost").value, venue: $("a-venue").value, ship: $("a-ship").value
+    }, null);
+    if (res.error){
+      err.textContent = res.error;
+      const map = { name:"a-name", balance:"a-balance", cost:"a-cost", ship:"a-ship" };
+      const f = $(map[res.focus] || "a-name"); if (f) f.focus();
+      return;
     }
-    const type = $("a-type").value;
-    const crypto = isCryptoType(type);
-    const flip = type === "reward-item";
-    const tokens = crypto ? $("a-tokens").value.trim() : "";
-    // Token positions are the source of truth for value: when they parse to a
-    // priced total, that total IS the balance — no double entry, no drift.
-    const tk = parseTokens(tokens);
-    const rolled = !!(tk && tk.total > 0);
-    if (rolled) balance = tk.total;
-    // Flip economics (reward items): the tracked balance IS the estimated
-    // resale price; cost and shipping refine the net.
-    const cost = flip ? parseAmount($("a-cost").value) : 0;
-    const ship = flip ? parseAmount($("a-ship").value) : 0;
-    if (cost === null || ship === null){
-      err.textContent = "Cost and shipping must be numbers like 12.50 — or blank for $0.";
-      (cost === null ? $("a-cost") : $("a-ship")).focus(); return;
-    }
-    DATA.accounts.push({
-      name,
-      type,
-      balance,
-      expires: $("a-expires").value || null,   // date input yields YYYY-MM-DD
-      notes: $("a-notes").value.trim(),
-      chain:   crypto ? $("a-chain").value : "",
-      address: crypto ? $("a-address").value.trim() : "",
-      tokens,
-      cost,
-      venue: flip ? $("a-venue").value : "",
-      ship
-    });
-    logEvent("Added “" + name + "” (" + usd(balance) + (rolled ? " from tokens)" : ")"));
+    DATA.accounts.push(res.account);
+    logEvent("Added “" + res.account.name + "” (" + usd(res.account.balance) + (res.rolled ? " from tokens)" : ")"));
     render();
     $("add-form").reset();
+    resetPwReveal();                           // hide the add-form password again
     syncCryptoFields();                        // reset() changed the type select
     $("a-name").focus();
     try { await save(); } catch (e2){ /* banner shown by save(); data stays in memory */ }
@@ -2200,6 +2694,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
         errors.push("Line " + (i+1) + ": bad date “" + p[3] + "” — use YYYY-MM-DD or -"); return;
       }
       added.push({ name, type, balance, expires, notes: p.slice(4).join(" | "),
+                   email:"", username:"", password:"", recovered:false,
                    chain:"", address:"", tokens:"", cost:0, venue:"", ship:0 });
     });
 
@@ -2241,6 +2736,7 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showToast("Encrypted backup downloaded — keep it somewhere safe.");
     logEvent("Exported encrypted backup");
     render();
     save().catch(() => {});                   // failure already surfaced by save()
@@ -2385,6 +2881,17 @@ Steam gift card | gift-card | 20.00 | - | code in email from 2023"></textarea>
     $("add-form").addEventListener("submit", addAccount);
     $("a-type").addEventListener("change", syncCryptoFields);
     syncCryptoFields();
+    // Add-form password reveal toggle.
+    $("a-pw-reveal").addEventListener("click", () => {
+      const inp = $("a-password"), btn = $("a-pw-reveal");
+      const show = inp.type === "password";
+      inp.type = show ? "text" : "password";
+      btn.textContent = show ? "hide" : "show";
+      btn.setAttribute("aria-pressed", String(show));
+      btn.setAttribute("aria-label", (show ? "Hide" : "Show") + " password");
+    });
+    // Collapsible activity log.
+    $("log-toggle").addEventListener("click", () => { UI.logCollapsed = !UI.logCollapsed; syncLogPanel(); });
     $("bulk-btn").addEventListener("click", bulkImport);
     $("export-btn").addEventListener("click", exportBackup);
     $("wipe-btn").addEventListener("click", wipeVault);
